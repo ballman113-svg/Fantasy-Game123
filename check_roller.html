@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Check Roller</title>
+<style>
+  body {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+  }
+  .card {
+    background: #16213e;
+    border: 1px solid #0f3460;
+    border-radius: 10px;
+    padding: 30px 40px;
+    width: 320px;
+    text-align: center;
+  }
+  h2 { margin: 0 0 24px; font-size: 1.4rem; letter-spacing: 1px; }
+  .field-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  label { font-size: 1rem; }
+  input {
+    width: 80px;
+    padding: 6px 10px;
+    background: #0f3460;
+    border: 1px solid #334;
+    border-radius: 5px;
+    color: #fff;
+    font-size: 1rem;
+    text-align: center;
+  }
+  .chance-display {
+    margin: 20px 0 4px;
+    font-size: 2rem;
+    font-weight: bold;
+    min-height: 2.5rem;
+  }
+  .label-small {
+    font-size: 0.8rem;
+    color: #888;
+    margin-bottom: 6px;
+  }
+  .difficulty-label {
+    font-size: 0.9rem;
+    margin-bottom: 16px;
+    font-style: italic;
+  }
+  button {
+    margin-top: 10px;
+    padding: 10px 28px;
+    background: #0f3460;
+    color: #fff;
+    border: 1px solid #1a6ca8;
+    border-radius: 6px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  button:hover { background: #1a6ca8; }
+  .result-display {
+    margin-top: 10px;
+    font-size: 1.3rem;
+    font-weight: bold;
+    min-height: 1.8rem;
+  }
+  .roll-display {
+    font-size: 0.9rem;
+    color: #aaa;
+    min-height: 1.2rem;
+    margin-top: 4px;
+  }
+  .green { color: #4caf50; }
+  .yellow { color: #ffc107; }
+  .red { color: #f44336; }
+  hr { border-color: #0f3460; margin: 20px 0; }
+  .modifier-note {
+    font-size: 0.75rem;
+    color: #666;
+    margin-top: -8px;
+    margin-bottom: 14px;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Check Roller</h2>
+  <div class="field-row">
+    <label>Check</label>
+    <input type="number" id="check" min="0" placeholder="0" oninput="updateChance()">
+  </div>
+  <div class="field-row">
+    <label>Difficulty</label>
+    <input type="number" id="difficulty" min="0" placeholder="0" oninput="updateChance()">
+  </div>
+  <div class="field-row">
+    <label>Modifier %</label>
+    <input type="number" id="modifier" placeholder="0" oninput="updateChance()">
+  </div>
+  <div class="modifier-note">e.g. +10 or -10</div>
+
+  <hr>
+  <div class="label-small">CHANCE OF SUCCESS</div>
+  <div class="chance-display" id="chanceDisplay">—</div>
+  <div class="difficulty-label" id="diffLabel"></div>
+  <button onclick="rollCheck()">Roll</button>
+  <div class="result-display" id="resultDisplay"></div>
+  <div class="roll-display" id="rollDisplay"></div>
+</div>
+
+<script>
+  let effectiveChance = null;
+
+  function updateChance() {
+    const check = parseFloat(document.getElementById('check').value);
+    const diff = parseFloat(document.getElementById('difficulty').value);
+    const mod = parseFloat(document.getElementById('modifier').value) || 0;
+    const display = document.getElementById('chanceDisplay');
+    const label = document.getElementById('diffLabel');
+    document.getElementById('resultDisplay').textContent = '';
+    document.getElementById('rollDisplay').textContent = '';
+
+    if (isNaN(check) || isNaN(diff) || (check + diff) === 0) {
+      display.textContent = '—';
+      display.className = 'chance-display';
+      label.textContent = '';
+      effectiveChance = null;
+      return;
+    }
+
+    const base = (check / (check + diff)) * 100;
+    const adjusted = Math.min(100, Math.max(0, base + mod));
+    effectiveChance = adjusted;
+
+    const pct = Math.round(adjusted);
+    display.textContent = pct + '%';
+
+    if (pct >= 70) {
+      display.className = 'chance-display green';
+      label.textContent = 'Easy';
+      label.className = 'difficulty-label green';
+    } else if (pct >= 40) {
+      display.className = 'chance-display yellow';
+      label.textContent = 'Moderate';
+      label.className = 'difficulty-label yellow';
+    } else {
+      display.className = 'chance-display red';
+      label.textContent = 'Hard';
+      label.className = 'difficulty-label red';
+    }
+  }
+
+  function rollCheck() {
+    const result = document.getElementById('resultDisplay');
+    const rollDisplay = document.getElementById('rollDisplay');
+
+    if (effectiveChance === null) {
+      result.textContent = 'Enter values first.';
+      result.className = 'result-display';
+      rollDisplay.textContent = '';
+      return;
+    }
+
+    const roll = Math.floor(Math.random() * 100) + 1;
+    const target = Math.round(effectiveChance);
+    rollDisplay.textContent = `Rolled: ${roll} (need ≤ ${target})`;
+
+    if (roll <= target) {
+      result.textContent = 'Success!';
+      result.className = 'result-display green';
+    } else {
+      result.textContent = 'Failure.';
+      result.className = 'result-display red';
+    }
+  }
+</script>
+</body>
+</html>

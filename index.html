@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AldraRPG — Game Master Toolkit</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@400;600&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: #2a2a3a;
+    --gold: #c9a84c;
+    --gold-dim: #8a6e2f;
+    --gold-glow: rgba(201,168,76,0.15);
+    --text: #e8e0d0;
+    --text-dim: #8a8070;
+    --adam: #93c5fd;
+    --brian: #86efac;
+    --craig: #fca5a5;
+  }
+
+  html, body {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Crimson Text', Georgia, serif;
+    overflow-x: hidden;
+  }
+
+  /* Background texture */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(201,168,76,0.06) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 40% at 20% 80%, rgba(147,197,253,0.04) 0%, transparent 60%),
+      radial-gradient(ellipse 40% 40% at 80% 80%, rgba(252,165,165,0.04) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 60px 24px 80px;
+  }
+
+  /* Header */
+  header {
+    text-align: center;
+    margin-bottom: 64px;
+  }
+
+  .title-eyebrow {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: var(--gold-dim);
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-family: 'Cinzel Decorative', serif;
+    font-size: clamp(2.2rem, 6vw, 3.8rem);
+    color: var(--gold);
+    line-height: 1.1;
+    text-shadow: 0 0 40px rgba(201,168,76,0.3), 0 2px 4px rgba(0,0,0,0.8);
+    margin-bottom: 20px;
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 24px auto;
+    max-width: 400px;
+  }
+  .divider-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--gold-dim), transparent);
+  }
+  .divider-gem {
+    width: 8px;
+    height: 8px;
+    background: var(--gold);
+    transform: rotate(45deg);
+    box-shadow: 0 0 8px var(--gold);
+  }
+
+  .subtitle {
+    font-style: italic;
+    color: var(--text-dim);
+    font-size: 1.15rem;
+    letter-spacing: 0.02em;
+  }
+
+  /* Players */
+  .players {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-bottom: 64px;
+    flex-wrap: wrap;
+  }
+
+  .player {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Cinzel', serif;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+  }
+
+  .player-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .player.adam .player-dot { background: var(--adam); box-shadow: 0 0 6px var(--adam); }
+  .player.brian .player-dot { background: var(--brian); box-shadow: 0 0 6px var(--brian); }
+  .player.craig .player-dot { background: var(--craig); box-shadow: 0 0 6px var(--craig); }
+
+  /* Tool grid */
+  .tools-section-label {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    color: var(--gold-dim);
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 2px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-bottom: 2px;
+  }
+
+  .tool-card {
+    background: var(--surface);
+    padding: 32px 28px;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.2s;
+  }
+
+  .tool-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+
+  .tool-card:hover {
+    background: #16161f;
+  }
+
+  .tool-card:hover::before {
+    opacity: 1;
+  }
+
+  .tool-icon {
+    font-size: 1.5rem;
+    margin-bottom: 4px;
+  }
+
+  .tool-name {
+    font-family: 'Cinzel', serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--gold);
+    letter-spacing: 0.05em;
+  }
+
+  .tool-desc {
+    font-size: 0.95rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+    font-style: italic;
+  }
+
+  .tool-arrow {
+    margin-top: auto;
+    padding-top: 12px;
+    font-family: 'Cinzel', serif;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    color: var(--gold-dim);
+    text-transform: uppercase;
+    transition: color 0.2s, letter-spacing 0.2s;
+  }
+
+  .tool-card:hover .tool-arrow {
+    color: var(--gold);
+    letter-spacing: 0.3em;
+  }
+
+  /* Footer */
+  footer {
+    margin-top: 64px;
+    text-align: center;
+    font-family: 'Cinzel', serif;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    color: var(--text-dim);
+    opacity: 0.5;
+  }
+
+  /* Animations */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  header { animation: fadeUp 0.7s ease both; }
+  .players { animation: fadeUp 0.7s 0.1s ease both; }
+  .tool-card:nth-child(1) { animation: fadeUp 0.5s 0.2s ease both; }
+  .tool-card:nth-child(2) { animation: fadeUp 0.5s 0.3s ease both; }
+  .tool-card:nth-child(3) { animation: fadeUp 0.5s 0.4s ease both; }
+  .tool-card:nth-child(4) { animation: fadeUp 0.5s 0.5s ease both; }
+  .tool-card:nth-child(5) { animation: fadeUp 0.5s 0.6s ease both; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <p class="title-eyebrow">Game Master Toolkit</p>
+    <h1>AldraRPG</h1>
+    <div class="divider">
+      <div class="divider-line"></div>
+      <div class="divider-gem"></div>
+      <div class="divider-line"></div>
+    </div>
+    <p class="subtitle">A living world, forged in fire and steel.</p>
+  </header>
+
+  <div class="players">
+    <div class="player adam"><div class="player-dot"></div> Adam</div>
+    <div class="player brian"><div class="player-dot"></div> Brian</div>
+    <div class="player craig"><div class="player-dot"></div> Craig</div>
+  </div>
+
+  <p class="tools-section-label">Tools of the Trade</p>
+
+  <div class="tools-grid">
+    <a href="combat-simulator.html" class="tool-card">
+      <div class="tool-icon">⚔️</div>
+      <div class="tool-name">Combat Simulator</div>
+      <div class="tool-desc">Turn-based battles, initiative, talents, and real-time sync.</div>
+      <div class="tool-arrow">Enter →</div>
+    </a>
+    <a href="character-sheet.html" class="tool-card">
+      <div class="tool-icon">📜</div>
+      <div class="tool-name">Character Sheets</div>
+      <div class="tool-desc">Stats, equipment, talent trees, and skill point management.</div>
+      <div class="tool-arrow">Enter →</div>
+    </a>
+    <a href="item-database.html" class="tool-card">
+      <div class="tool-icon">🗡️</div>
+      <div class="tool-name">Item Database</div>
+      <div class="tool-desc">Weapons, armor, Harold's Emporium, and crafting recipes.</div>
+      <div class="tool-arrow">Enter →</div>
+    </a>
+    <a href="creature-database.html" class="tool-card">
+      <div class="tool-icon">🐉</div>
+      <div class="tool-name">Creature Database</div>
+      <div class="tool-desc">Monster stat blocks, abilities, and encounter building.</div>
+      <div class="tool-arrow">Enter →</div>
+    </a>
+    <a href="check_roller.html" class="tool-card">
+      <div class="tool-icon">🎲</div>
+      <div class="tool-name">Dice Roller</div>
+      <div class="tool-desc">Shared dice rolls broadcast live to the table via Firebase.</div>
+      <div class="tool-arrow">Enter →</div>
+    </a>
+  </div>
+
+  <footer>AldraRPG &nbsp;·&nbsp; For the Boyz</footer>
+
+</div>
+</body>
+</html>

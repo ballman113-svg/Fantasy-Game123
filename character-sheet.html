@@ -1,0 +1,2626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Character Sheet</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #111827; color: #f9fafb; font-family: system-ui, sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1f2937; }
+    ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+    .saved-flash { animation: savedFlash 1.2s ease forwards; }
+    @keyframes savedFlash { 0%{opacity:1} 60%{opacity:1} 100%{opacity:0} }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const ATTRS = ["Intelligence","Strength","Agility","Vitality","Willpower","Cunning","Speed"];
+const DERIVED_STATS = ["Guard","Health","Energy"];
+const COMBAT_STATS = ["Attack Rating","Defense","Magic Attack","Critical Hit Chance","Critical Hit Damage","Spell Critical Chance","Spell Critical Damage","Flanking Damage","Guard Damage","Armor Penetration"];
+const RESIST_LEFT  = ["Blunt Resistance","Cleaving Resistance","Piercing/Slashing Resistance","Acid Resistance","Arcane Resistance"];
+const RESIST_RIGHT = ["Fire Resistance","Frost Resistance","Light Resistance","Lightning Resistance","Nature Resistance","Poison Resistance","Shadow Resistance"];
+const RESISTANCES  = RESIST_LEFT.concat(RESIST_RIGHT);
+const SKILLS_LEFT  = ["Acrobatics","Alchemy","Armorer","Athletics","Coercion","Engineering","Forgery","Inscription","Jewelcrafting","Listen","Lore"];
+const SKILLS_RIGHT = ["Medical","Riding","Rope Use","Search","Security","Stealth","Streetwise","Survival","Tracking","Weaponsmith"];
+const SKILLS = SKILLS_LEFT.concat(SKILLS_RIGHT);
+const ALL_PARSEABLE = ATTRS.concat(DERIVED_STATS).concat(COMBAT_STATS).concat(RESISTANCES).concat(SKILLS);
+const SORTED_KEYS = ALL_PARSEABLE.slice().sort((a,b) => b.length - a.length);
+const DAMAGE_TYPES = ["Blunt","Cleaving","Piercing/Slashing","Acid","Arcane","Fire","Frost","Light","Lightning","Nature","Poison","Shadow"];
+const DAMAGE_COLORS = {Blunt:"#d4b483",Cleaving:"#e87040","Piercing/Slashing":"#c0c0c0",Acid:"#aaff00",Arcane:"#bb44ff",Fire:"#ff7700",Frost:"#44aaff",Light:"#ffee44",Lightning:"#ffff55",Nature:"#44dd44",Poison:"#88cc00",Shadow:"#cc44ff"};
+function getTalentDmgRange(talent, pts, playerLevel) {
+  const lvl = Math.max(1, parseInt(playerLevel)||1);
+  const type = talent.type;
+  if (type === 'Spell Attack') {
+    const baseMin = parseInt(talent.minVal)||0;
+    const baseMax = parseInt(talent.maxVal)||0;
+    if (!baseMin && !baseMax) return null;
+    const scale = parseFloat(talent.dmgLevelScale)||0;
+    const mult = scale > 0 ? (1 + scale * lvl / 100) : 1;
+    const dmgType = talent.spellDmgType && talent.spellDmgType !== 'None' ? talent.spellDmgType : (talent.damageType || 'Arcane');
+    return { min: Math.round(baseMin * mult), max: Math.round(baseMax * mult), baseMin, baseMax, scaled: scale > 0, color: DAMAGE_COLORS[dmgType]||'#a78bfa', label: dmgType };
+  }
+  if (type === 'Spell Heal') {
+    const baseMin = parseInt(talent.minHeal)||0;
+    const baseMax = parseInt(talent.maxHeal)||0;
+    if (!baseMin && !baseMax) return null;
+    const scale = parseFloat(talent.healLevelScale)||0;
+    const mult = scale > 0 ? (1 + scale * lvl / 100) : 1;
+    return { min: Math.round(baseMin * mult), max: Math.round(baseMax * mult), baseMin, baseMax, scaled: scale > 0, color: '#4ade80', label: 'Heal' };
+  }
+  return null;
+}
+
+const pctStats = {"Critical Hit Chance":true,"Spell Critical Chance":true,"Critical Hit Damage":true,"Spell Critical Damage":true,"Flanking Damage":true};
+
+const PLAYER_DEFS = [
+  { id:'adam',  name:'Adam',  color:'#93c5fd' },
+  { id:'brian', name:'Brian', color:'#86efac' },
+  { id:'craig', name:'Craig', color:'#fca5a5' },
+];
+
+// ─── PARSERS ──────────────────────────────────────────────────────────────────
+function parseBonus(text) {
+  const bonuses = {};
+  const escaped = SORTED_KEYS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|");
+  const re = new RegExp("([+-]\\d+)%?\\s+("+escaped+")","gi");
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const key = ALL_PARSEABLE.find(a => a.toLowerCase() === m[2].toLowerCase());
+    if (key) bonuses[key] = (bonuses[key]||0) + parseInt(m[1]);
+  }
+  return bonuses;
+}
+function parseDamageBonus(text, forceHand) {
+  const result = {main:{},off:{}};
+  // Explicit hand qualifier — always respected
+  const reWithHand = new RegExp("([+-]\\d+)\\s+("+DAMAGE_TYPES.join("|")+")\\s+damage\\s+(main\\s+hand|off\\s+hand)","gi");
+  // No qualifier — routes to forceHand (weapon slot) or ignored (armor/accessory)
+  const reNoHand   = new RegExp("([+-]\\d+)\\s+("+DAMAGE_TYPES.join("|")+")\\s+damage(?!\\s+(main|off)\\s+hand)","gi");
+  let m;
+  while ((m = reWithHand.exec(text)) !== null) {
+    const type = DAMAGE_TYPES.find(t => t.toLowerCase() === m[2].toLowerCase());
+    const hand = m[3].toLowerCase().replace(/\s+/,"") === "mainhand" ? "main" : "off";
+    if (type) result[hand][type] = (result[hand][type]||0) + parseInt(m[1]);
+  }
+  if (forceHand) {
+    while ((m = reNoHand.exec(text)) !== null) {
+      const type = DAMAGE_TYPES.find(t => t.toLowerCase() === m[2].toLowerCase());
+      if (type) result[forceHand][type] = (result[forceHand][type]||0) + parseInt(m[1]);
+    }
+  }
+  return result;
+}
+function parseProtectionBonus(text) {
+  const protections = {};
+  const re = new RegExp(`Protection\\s+From\\s+(${DAMAGE_TYPES.join('|')})\\s+damage\\s+(\\d+)%`, 'gi');
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const type = DAMAGE_TYPES.find(t => t.toLowerCase() === m[1].toLowerCase());
+    if (type) protections[type] = (protections[type]||0) + parseInt(m[2]);
+  }
+  return protections;
+}
+function parseWeaknessBonus(text) {
+  const weaknesses = {};
+  const re = new RegExp(`Weakness\\s+to\\s+(${DAMAGE_TYPES.join('|')})\\s+damage\\s+(\\d+)%`, 'gi');
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const type = DAMAGE_TYPES.find(t => t.toLowerCase() === m[1].toLowerCase());
+    if (type) weaknesses[type] = (weaknesses[type]||0) + parseInt(m[2]);
+  }
+  return weaknesses;
+}
+function parseImmunityBonus(text) {
+  const CONDITION_NAMES = ["Burning","Chilled","Frozen","Shocked","Dazed","Asleep","Poisoned","Knocked Down","Stunned","Charmed","Haste","Slowed","Blind","Invisible","Taunted","Gut Punched","Seized"];
+  const damageImmunities = [];
+  const conditionImmunities = [];
+  const damageRe = new RegExp(`Immune\\s+to\\s+(${DAMAGE_TYPES.join('|')})\\s+damage`, 'gi');
+  const conditionRe = new RegExp(`Immune\\s+to\\s+(${CONDITION_NAMES.map(c=>c.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')})`, 'gi');
+  let m;
+  while ((m = damageRe.exec(text)) !== null) {
+    const type = DAMAGE_TYPES.find(t => t.toLowerCase() === m[1].toLowerCase());
+    if (type && !damageImmunities.includes(type)) damageImmunities.push(type);
+  }
+  while ((m = conditionRe.exec(text)) !== null) {
+    const cond = CONDITION_NAMES.find(c => c.toLowerCase() === m[1].toLowerCase());
+    if (cond && !conditionImmunities.includes(cond)) conditionImmunities.push(cond);
+  }
+  return { damageImmunities, conditionImmunities };
+}
+function parsePctBonus(text) {
+  const bonuses = {};
+  const escaped = SORTED_KEYS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|");
+  const re = new RegExp("([+-]\\d+)%\\s+("+escaped+")","gi");
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const key = ALL_PARSEABLE.find(a => a.toLowerCase() === m[2].toLowerCase());
+    if (key) bonuses[key] = (bonuses[key]||0) + parseInt(m[1]);
+  }
+  return bonuses;
+}
+function parseProcBonus(text, forceHand) {
+  const result = {main:[],off:[]};
+  const reWithHand = /(\d+)%\s+chance\s+to\s+cause\s+(\w[\w\s]*)\s+(\d+)\s+rounds?\s+(main\s+hand|off\s+hand)/gi;
+  const reNoHand   = /(\d+)%\s+chance\s+to\s+cause\s+(\w[\w\s]*)\s+(\d+)\s+rounds?(?!\s+(main|off)\s+hand)/gi;
+  let m;
+  while ((m = reWithHand.exec(text)) !== null) {
+    const hand = m[4].toLowerCase().replace(/\s+/,'') === 'mainhand' ? 'main' : 'off';
+    const cond = m[2].trim(); result[hand].push({ condition: cond.charAt(0).toUpperCase()+cond.slice(1), chance: parseInt(m[1])/100, rounds: parseInt(m[3]) });
+  }
+  if (forceHand) {
+    while ((m = reNoHand.exec(text)) !== null) {
+      const cond = m[2].trim(); result[forceHand].push({ condition: cond.charAt(0).toUpperCase()+cond.slice(1), chance: parseInt(m[1])/100, rounds: parseInt(m[3]) });
+    }
+  }
+  return result;
+}
+function parseRemoveConditions(text) {
+  // Returns {mode:'all'} or {mode:'select', conditions:[...]} or null
+  if(/Remove\s+all\s+conditions/i.test(text)) return {mode:'all'};
+  const m = text.match(/Remove:\s*([\w\s,()]+)/i);
+  if(m) {
+    const conditions = m[1].split(',').map(s=>s.trim()).filter(Boolean);
+    if(conditions.length) return {mode:'select', conditions};
+  }
+  return null;
+}
+function parseGuaranteedProc(text) {
+  // Matches: Inflicts [Condition] for N rounds on hit
+  const result = [];
+  const condNames = Object.keys({Burning:1,Chilled:1,Frozen:1,Shocked:1,Dazed:1,Asleep:1,Poisoned:1,'Knocked Down':1,Stunned:1,Charmed:1,Haste:1,Slowed:1,Blind:1,Invisible:1,'Invisible (Improved)':1,Taunted:1,'Gut Punched':1,Seized:1,Feared:1,Enraged:1,Concealed:1,Confused:1,Bleeding:1,Deafened:1,Silenced:1,Fatigued:1,Immobilized:1,Paralyzed:1,Disarmed:1,Grappled:1,Flying:1,Sundered:1});
+  const escaped = condNames.map(c=>c.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|');
+  const re = new RegExp(`Inflicts\\s+(${escaped})\\s+for\\s+(\\d+)\\s+rounds?\\s+on\\s+hit`,'gi');
+  let m;
+  while((m = re.exec(text)) !== null) {
+    const cond = condNames.find(c=>c.toLowerCase()===m[1].toLowerCase());
+    if(cond) result.push({condition:cond, rounds:parseInt(m[2])});
+  }
+  return result;
+}
+function parseHealProcBonus(text, forceHand) {
+  const result = {main:[],off:[]};
+  const reWithHand = /(\d+)%\s+chance\s+to\s+heal\s+(\d+)%\s+on\s+hit\s+(main\s+hand|off\s+hand)/gi;
+  const reNoHand   = /(\d+)%\s+chance\s+to\s+heal\s+(\d+)%\s+on\s+hit(?!\s+(main|off)\s+hand)/gi;
+  let m;
+  while ((m = reWithHand.exec(text)) !== null) {
+    const hand = m[3].toLowerCase().replace(/\s+/,'') === 'mainhand' ? 'main' : 'off';
+    result[hand].push({ chance: parseInt(m[1])/100, healPct: parseInt(m[2])/100 });
+  }
+  if (forceHand) {
+    while ((m = reNoHand.exec(text)) !== null) {
+      result[forceHand].push({ chance: parseInt(m[1])/100, healPct: parseInt(m[2])/100 });
+    }
+  }
+  return result;
+}
+function parseGuardProcBonus(text, forceHand) {
+  const result = {main:[],off:[]};
+  const reWithHand = /(\d+)%\s+chance\s+to\s+restore\s+(\d+)%\s+guard\s+on\s+hit\s+(main\s+hand|off\s+hand)/gi;
+  const reNoHand   = /(\d+)%\s+chance\s+to\s+restore\s+(\d+)%\s+guard\s+on\s+hit(?!\s+(main|off)\s+hand)/gi;
+  let m;
+  while ((m = reWithHand.exec(text)) !== null) {
+    const hand = m[3].toLowerCase().replace(/\s+/,'') === 'mainhand' ? 'main' : 'off';
+    result[hand].push({ chance: parseInt(m[1])/100, restorePct: parseInt(m[2])/100 });
+  }
+  if (forceHand) {
+    while ((m = reNoHand.exec(text)) !== null) {
+      result[forceHand].push({ chance: parseInt(m[1])/100, restorePct: parseInt(m[2])/100 });
+    }
+  }
+  return result;
+}
+function parseEnergyProcBonus(text, forceHand) {
+  const result = {main:[],off:[]};
+  const reWithHand = /(\d+)%\s+chance\s+to\s+restore\s+(\d+)%\s+energy\s+on\s+hit\s+(main\s+hand|off\s+hand)/gi;
+  const reNoHand   = /(\d+)%\s+chance\s+to\s+restore\s+(\d+)%\s+energy\s+on\s+hit(?!\s+(main|off)\s+hand)/gi;
+  let m;
+  while ((m = reWithHand.exec(text)) !== null) {
+    const hand = m[3].toLowerCase().replace(/\s+/,'') === 'mainhand' ? 'main' : 'off';
+    result[hand].push({ chance: parseInt(m[1])/100, restorePct: parseInt(m[2])/100 });
+  }
+  if (forceHand) {
+    while ((m = reNoHand.exec(text)) !== null) {
+      result[forceHand].push({ chance: parseInt(m[1])/100, restorePct: parseInt(m[2])/100 });
+    }
+  }
+  return result;
+}
+function parseMinMaxBonus(text, forceHand) {
+  const result = {main:{min:0,max:0},off:{min:0,max:0}};
+  const reWithHand = new RegExp("([+-]\\d+)\\s+(min|max)\\s+damage\\s+(main\\s+hand|off\\s+hand)","gi");
+  const reNoHand   = new RegExp("([+-]\\d+)\\s+(min|max)\\s+damage(?!\\s+(main|off)\\s+hand)","gi");
+  let m;
+  while ((m = reWithHand.exec(text)) !== null) {
+    const hand = m[3].toLowerCase().replace(/\s+/,"") === "mainhand" ? "main" : "off";
+    result[hand][m[2].toLowerCase()] += parseInt(m[1]);
+  }
+  if (forceHand) {
+    while ((m = reNoHand.exec(text)) !== null) {
+      result[forceHand][m[2].toLowerCase()] += parseInt(m[1]);
+    }
+  }
+  return result;
+}
+
+// ─── SHEET STATE ──────────────────────────────────────────────────────────────
+const defHand   = {type:"Melee",name:"",minDmg:"",maxDmg:"",defenseMod:"",traits:"",image:""};
+const defArmor  = {type:"",armor:"",traits:"",image:""};
+const defSimple = {traits:"",image:""};
+const defBelt   = {quickSlots:"",traits:"",image:""};
+
+function createSheetState() {
+  return {
+    bio: {Name:"",Race:"",Class:"",XPLevel:"",XP:"",Alignment:"",Age:"",Height:"",Weight:"",HairEyesSkin:""},
+    baseStats:  Object.fromEntries(ATTRS.map(a => [a,""])),
+    current:    {Guard:"",Health:"",Energy:""},
+    mainHand: {...defHand}, offHand: {...defHand},
+    head:{...defArmor}, body:{...defArmor}, legs:{...defArmor},
+    hands:{...defArmor}, feet:{...defArmor}, back:{...defArmor},
+    belt:{...defBelt}, amulet:{...defSimple}, leftRing:{...defSimple}, rightRing:{...defSimple},
+    baseSkills: Object.fromEntries(SKILLS.map(s => [s,""])),
+    inventory:  Array(20).fill(null).map(() => ({name:"",weight:""})),
+    traitsText: "",
+  };
+}
+
+function computeBonuses(sheet) {
+  const { mainHand, offHand, head, body, legs, hands, feet, back, belt, amulet, leftRing, rightRing } = sheet;
+  const allBonuses = Object.fromEntries(ALL_PARSEABLE.map(k => [k,0]));
+  const allPctBonuses = {};
+  // Armor pieces contribute three separate physical resistances
+  [head,body,legs,hands,feet,back].forEach(p => {
+    if (!p) return;
+    allBonuses["Blunt Resistance"]            = (allBonuses["Blunt Resistance"]||0)            + (parseInt(p.bluntRes)||0);
+    allBonuses["Cleaving Resistance"]         = (allBonuses["Cleaving Resistance"]||0)         + (parseInt(p.cleavingRes)||0);
+    allBonuses["Piercing/Slashing Resistance"]= (allBonuses["Piercing/Slashing Resistance"]||0)+ (parseInt(p.piercingSlashingRes)||0);
+  });
+  const allDamage = {main:{},off:{}};
+  const allMinMax = {main:{min:0,max:0},off:{min:0,max:0}};
+  const allProcs  = {main:[],off:[]};
+  const allHealProcs = {main:[],off:[]};
+  const allGuardProcs = {main:[],off:[]};
+  const allEnergyProcs = {main:[],off:[]};
+  const allDamageImmunities = [];
+  const allConditionImmunities = [];
+  const allWeaknesses = {};
+  const allProtections = {};
+  [[mainHand,'main'],[offHand,'off'],...[head,body,legs,hands,feet,back,belt,amulet,leftRing,rightRing].map(p=>[p,null])].forEach(([p,weaponHand]) => {
+    if (!p) return;
+    const v = p.traits||"";
+    Object.entries(parseBonus(v)).forEach(([k,val]) => { allBonuses[k] += val; });
+    Object.entries(parsePctBonus(v)).forEach(([k,val]) => { allPctBonuses[k] = (allPctBonuses[k]||0) + val; });
+    const d = parseDamageBonus(v, weaponHand);
+    ["main","off"].forEach(h => Object.keys(d[h]).forEach(t => { allDamage[h][t]=(allDamage[h][t]||0)+d[h][t]; }));
+    const mm = parseMinMaxBonus(v, weaponHand);
+    ["main","off"].forEach(h => { allMinMax[h].min+=mm[h].min; allMinMax[h].max+=mm[h].max; });
+    const pr = parseProcBonus(v, weaponHand);
+    ["main","off"].forEach(h => { allProcs[h].push(...pr[h]); });
+    const hp = parseHealProcBonus(v, weaponHand);
+    ["main","off"].forEach(h => { allHealProcs[h].push(...hp[h]); });
+    const gp = parseGuardProcBonus(v, weaponHand);
+    ["main","off"].forEach(h => { allGuardProcs[h].push(...gp[h]); });
+    const ep = parseEnergyProcBonus(v, weaponHand);
+    ["main","off"].forEach(h => { allEnergyProcs[h].push(...ep[h]); });
+    const imm = parseImmunityBonus(v);
+    imm.damageImmunities.forEach(t => { if(!allDamageImmunities.includes(t)) allDamageImmunities.push(t); });
+    imm.conditionImmunities.forEach(c => { if(!allConditionImmunities.includes(c)) allConditionImmunities.push(c); });
+    const wk = parseWeaknessBonus(v);
+    Object.entries(wk).forEach(([t,pct]) => { allWeaknesses[t] = (allWeaknesses[t]||0) + pct; });
+    const pt = parseProtectionBonus(v);
+    Object.entries(pt).forEach(([t,pct]) => { allProtections[t] = (allProtections[t]||0) + pct; });
+  });
+  const allDmgTypes = new Set([...Object.keys(allWeaknesses), ...Object.keys(allProtections)]);
+  const damageMultipliers = Object.fromEntries([...allDmgTypes].map(t => {
+    const net = (allWeaknesses[t]||0) - (allProtections[t]||0);
+    return [t, parseFloat((1 + net/100).toFixed(4))];
+  }).filter(([,v]) => v !== 1));
+  return { allBonuses, allPctBonuses, allDamage, allMinMax, allProcs, allHealProcs, allGuardProcs, allEnergyProcs, allDamageImmunities, allConditionImmunities, damageMultipliers };
+}
+
+function deriveStats(sheet) {
+  const { baseStats, mainHand, offHand } = sheet;
+  const { allBonuses, allPctBonuses, allDamage, allMinMax, allProcs, allHealProcs, allGuardProcs, allEnergyProcs, allDamageImmunities, allConditionImmunities, damageMultipliers } = computeBonuses(sheet);
+  const sv = attr => {
+    const base = parseInt(baseStats[attr])||0;
+    const flat = allBonuses[attr]||0;
+    const pct  = allPctBonuses[attr]||0;
+    return base + flat + Math.round(base * pct / 100);
+  };
+  const str=sv("Strength"),agi=sv("Agility"),cun=sv("Cunning"),vit=sv("Vitality"),int_=sv("Intelligence"),wil=sv("Willpower"),spd=sv("Speed");
+  const maxHp       = vit    + allBonuses["Health"];
+  const maxGuard    = str*5  + allBonuses["Guard"];
+  const maxEnergy   = wil*10 + allBonuses["Energy"];
+  // Physical resistances are now in allBonuses["Blunt Resistance"] etc. and flow into resistances object below
+  const attack      = Math.floor((str+agi)/2) + (allBonuses["Attack Rating"]||0);
+  const defense     = Math.floor((agi+cun)/2) + (allBonuses["Defense"]||0);
+  const magicAttack = Math.floor((int_+wil)/2) + (allBonuses["Magic Attack"]||0);
+  const critChance  = (Math.floor((cun/1000)*100) + (allBonuses["Critical Hit Chance"]||0)) / 100;
+  const critDamage  = (Math.floor(((agi/200)+1.4)*100) + (allBonuses["Critical Hit Damage"]||0)) / 100;
+  const spellCritChance = (Math.floor((int_/1000)*100) + (allBonuses["Spell Critical Chance"]||0)) / 100;
+  const spellCritDamage = (Math.floor(((wil/200)+1.4)*100) + (allBonuses["Spell Critical Damage"]||0)) / 100;
+  const flankingDamage  = (Math.floor(((agi/200)+1)*100) + (allBonuses["Flanking Damage"]||0)) / 100;
+  const meleeDmgPct  = str;
+  const rangedDmgPct = agi;
+  const mhType = mainHand.type||"Melee";
+  const pct = mhType==="Ranged" ? rangedDmgPct : meleeDmgPct;
+  const minBase = (parseInt(mainHand.minDmg)||0) + allMinMax.main.min;
+  const maxBase = (parseInt(mainHand.maxDmg)||0) + allMinMax.main.max;
+  const minDmg = mhType==="Shield" ? Math.round(minBase*(1+meleeDmgPct/100)) : Math.round(minBase*(1+pct/100));
+  const maxDmg = mhType==="Shield" ? Math.round(maxBase*(1+meleeDmgPct/100)) : Math.round(maxBase*(1+pct/100));
+  const weaponDefense = (parseInt(mainHand.defenseMod)||0) + (parseInt(offHand.defenseMod)||0);
+  const totalDefense = defense + weaponDefense;
+  const resistances = Object.fromEntries(
+    ["Blunt","Cleaving","Piercing/Slashing","Acid","Arcane","Fire","Frost","Light","Lightning","Nature","Poison","Shadow"].map(t => [t, allBonuses[t+" Resistance"]||0])
+  );
+  const guardDamage = allBonuses["Guard Damage"]||0;
+  const armorPen    = allBonuses["Armor Penetration"]||0;
+  const statBonus   = (agi + spd) / 2 / 100;
+  const mhSpeed = parseFloat(mainHand.weaponSpeed) || parseFloat(mainHand._dbItem?.weaponSpeed) || 0;
+  const ohSpeed = parseFloat(offHand.weaponSpeed) || parseFloat(offHand._dbItem?.weaponSpeed) || 0;
+  const weaponSpeedBase = (mhSpeed > 0 && ohSpeed > 0) ? (mhSpeed + ohSpeed) / 2 : mhSpeed;
+  const unarmedSpeed = Math.max(1.00, parseFloat((2.00 - statBonus).toFixed(2)));
+  const attackSpeed = weaponSpeedBase > 0 ? parseFloat((unarmedSpeed + weaponSpeedBase).toFixed(2)) : unarmedSpeed;
+  const ohType = offHand.type||"Melee";
+  const ohPct  = ohType==="Ranged" ? rangedDmgPct : meleeDmgPct;
+  const ohMinBase = (parseInt(offHand.minDmg)||0) + allMinMax.off.min;
+  const ohMaxBase = (parseInt(offHand.maxDmg)||0) + allMinMax.off.max;
+  const offMinDmg = ohType==="Shield" ? Math.round(ohMinBase*(1+meleeDmgPct/100)) : Math.round(ohMinBase*(1+ohPct/100));
+  const offMaxDmg = ohType==="Shield" ? Math.round(ohMaxBase*(1+meleeDmgPct/100)) : Math.round(ohMaxBase*(1+ohPct/100));
+  return { maxHp, maxGuard, maxEnergy, attack, defense: totalDefense, magicAttack, critChance, critDamage, spellCritChance, spellCritDamage, flankingDamage, meleeDmgPct, rangedDmgPct, spellDmgPct: wil, minDmg, maxDmg, weapon: mainHand.name||"Unarmed", weaponPhysDmgType: mainHand.physDmgType||'Blunt', offMinDmg, offMaxDmg, offWeapon: offHand.name||"", offWeaponPhysDmgType: offHand.physDmgType||'Blunt', resistances, weaponElementalDamage: allDamage.main, offWeaponElementalDamage: allDamage.off, weaponProcs: allProcs, healProcs: allHealProcs, guardProcs: allGuardProcs, energyProcs: allEnergyProcs, damageImmunities: allDamageImmunities, sheetConditionImmunities: allConditionImmunities, damageMultipliers, guardDamage, armorPen, attackSpeed };
+}
+
+// ─── STYLE HELPERS ────────────────────────────────────────────────────────────
+const iBase   = {background:"#0f0f23",border:"1px solid #2a2a3e",borderRadius:6,color:"#fff",fontFamily:"monospace",outline:"none"};
+const selBase = {background:"#0f0f23",border:"1px solid #2a2a3e",borderRadius:6,color:"#aaa",fontFamily:"monospace",outline:"none",padding:"7px 8px",fontSize:13,width:"100%"};
+const fLabel  = {fontSize:10,color:"#666",letterSpacing:1,marginBottom:4};
+const secStyle= {background:"#16213e",borderRadius:10,padding:"20px 24px",marginBottom:20,border:"1px solid #2a2a4a"};
+const secTitle= {margin:"0 0 16px",fontSize:13,letterSpacing:2,color:"#888"};
+
+// ─── TALENT DATABASE PICKER ───────────────────────────────────────────────────
+function loadDbTrees() {
+  try {
+    const raw = localStorage.getItem('cs_talentDatabase');
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function checkDbPrereqs(talent, skillPoints) {
+  return (talent.prerequisites||[]).every(p => (skillPoints[p.id]||0) >= (p.minPoints||1));
+}
+
+
+// ─── CLASS PICKER MODAL ───────────────────────────────────────────────────────
+function ClassPickerModal({ activeClasses, onToggle, onClose }) {
+  const trees = loadDbTrees();
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:400,padding:20}}
+         onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:'#0f0d0a',border:'1px solid #c9a227',borderRadius:14,padding:28,width:'100%',maxWidth:520,maxHeight:'80vh',overflowY:'auto'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+          <span style={{color:'#c9a227',fontSize:15,fontWeight:700,letterSpacing:2}}>CHOOSE CLASS</span>
+          <button onClick={onClose} style={{background:'#374151',border:'none',borderRadius:6,color:'#9ca3af',cursor:'pointer',padding:'6px 14px',fontSize:12}}>Done</button>
+        </div>
+        {trees.length===0&&<div style={{color:'#4b5563',fontStyle:'italic',textAlign:'center',padding:20}}>No talent trees found.</div>}
+        <div style={{display:'flex',flexWrap:'wrap',gap:10}}>
+          {trees.map(tree=>{
+            const active=(activeClasses||[]).includes(tree.id);
+            return (
+              <button key={tree.id} onClick={()=>onToggle(tree.id)} style={{
+                padding:'12px 20px',borderRadius:10,fontSize:13,cursor:'pointer',
+                border:'2px solid '+(active?tree.color:'#3a3020'),
+                background:active?tree.color+'22':'#0d0b08',
+                color:active?tree.color:'#777',
+                fontFamily:'Georgia, serif',
+              }}>
+                {tree.name}{active&&<span style={{marginLeft:6,fontSize:11}}>&#x2736;</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TALENT NODE TOOLTIP ──────────────────────────────────────────────────────
+function TalentNodeTooltip({ talent, treeColor, skillPoints, onSkillPointsChange, availablePoints, playerLevel, allTalents, onClose }) {
+  const pts = skillPoints[talent.id]||0;
+  const maxPts = talent.maxPoints||1;
+  const prereqsMet = checkDbPrereqs(talent, skillPoints);
+  const maxed = pts >= maxPts;
+  const canAdd = availablePoints > 0 && !maxed && prereqsMet;
+  const typeColors = {Passive:'#9ca3af',Melee:'#f87171',Ranged:'#34d399','Spell Attack':'#a78bfa','Spell Heal':'#4ade80',Reaction:'#60a5fa',Buff:'#fb923c',Enchantment:'#c084fc',Summon:'#67e8f9','Raise Summon':'#c084fc',Resurrection:'#f9a8d4','Blood Sacrifice':'#dc2626','Talent Manipulation':'#f59e0b'};
+  const dmgRange = getTalentDmgRange(talent, pts, playerLevel);
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500,padding:16}}
+         onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:'#12100d',border:'2px solid '+treeColor,borderRadius:14,width:'100%',maxWidth:360,overflow:'hidden',boxShadow:'0 0 32px '+treeColor+'44'}}>
+        <div style={{background:'#0a0805',padding:'12px 16px',borderBottom:'1px solid '+treeColor+'44',display:'flex',alignItems:'center',gap:10}}>
+          {talent.image&&<img src={talent.image} alt="" style={{width:40,height:40,objectFit:'cover',borderRadius:6,border:'1px solid '+treeColor+'66'}} onError={e=>e.target.style.display='none'}/>}
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:700,color:'#e2e8f0',fontSize:14,marginBottom:3}}>{talent.name}</div>
+            <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+              <span style={{fontSize:10,color:typeColors[talent.type]||'#9ca3af',background:'#1a1a2e',padding:'1px 6px',borderRadius:3}}>{talent.type}</span>
+              {talent.requiredLevel>1&&<span style={{fontSize:10,color:'#6b7280',background:'#111827',padding:'1px 6px',borderRadius:3}}>Lv.{talent.requiredLevel}+</span>}
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'#6b7280',cursor:'pointer',fontSize:18,lineHeight:1,padding:4}}>&#x2715;</button>
+        </div>
+        <div style={{padding:'12px 16px'}}>
+          {talent.description&&<div style={{fontSize:11,color:'#9ca3af',lineHeight:1.5,marginBottom:10}}>{talent.description}</div>}
+          {dmgRange&&(
+            <div style={{background:'#0d0b08',border:'1px solid #2a2a1a',borderRadius:6,padding:'6px 10px',marginBottom:10}}>
+              {dmgRange.scaled&&(dmgRange.min!==dmgRange.baseMin||dmgRange.max!==dmgRange.baseMax)&&
+                <div style={{fontSize:9,color:'#4b5563',textDecoration:'line-through'}}>{dmgRange.baseMin}&#x2013;{dmgRange.baseMax}</div>}
+              <div style={{fontSize:12,fontWeight:700,color:dmgRange.color}}>{dmgRange.min}&#x2013;{dmgRange.max} <span style={{fontSize:10,fontWeight:400,color:'#6b7280'}}>{dmgRange.label}</span></div>
+              {dmgRange.scaled&&<div style={{fontSize:9,color:'#4b5563',marginTop:1}}>Lv.{playerLevel} scaled</div>}
+            </div>
+          )}
+          {(talent.baseValue||talent.perPtBonus)&&(
+            <div style={{background:'#0d0b08',border:'1px solid #2a2a1a',borderRadius:6,padding:'6px 10px',marginBottom:10,fontSize:11,color:'#c9a227'}}>
+              Base: {talent.baseValue||0}{talent.perPtBonus?' +'+talent.perPtBonus+' per pt':''}
+              {pts>0&&talent.perPtBonus&&<span style={{color:'#e2e8f0',marginLeft:6}}>&#x2192; Current: {(parseInt(talent.baseValue)||0)+(pts-1)*(parseInt(talent.perPtBonus)||0)}</span>}
+            </div>
+          )}
+          {talent.cooldownSeconds>0&&<div style={{fontSize:11,color:'#60a5fa',marginBottom:10}}>&#x23F1; {talent.cooldownSeconds}s cooldown</div>}
+          {(talent.prerequisites||[]).length>0&&(
+            <div style={{marginBottom:10}}>
+              {(talent.prerequisites).map(p=>{
+                const req=allTalents.find(t=>t.id===p.id);
+                const met=(skillPoints[p.id]||0)>=(p.minPoints||1);
+                return <div key={p.id} style={{fontSize:10,color:met?'#4ade80':'#ef4444'}}>{met?'&#x2713;':'&#x2717;'} Requires {req&&req.name||p.id}{p.minPoints>1?' ('+p.minPoints+'+ pts)':''}</div>;
+              })}
+            </div>
+          )}
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+            <div style={{flex:1,height:6,background:'#1a1510',borderRadius:3,overflow:'hidden'}}>
+              <div style={{height:'100%',background:treeColor,width:((pts/maxPts)*100)+'%',transition:'width 0.2s'}}/>
+            </div>
+            <span style={{fontSize:11,color:pts>0?treeColor:'#6b7280',fontWeight:700,minWidth:44,textAlign:'right'}}>
+              {pts}/{maxPts}{maxed&&<span style={{color:'#c9a227',marginLeft:3}}>MAX</span>}
+            </span>
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            {pts>0&&(
+              <button onClick={()=>{const next={...skillPoints,[talent.id]:pts-1};if(next[talent.id]<=0)delete next[talent.id];onSkillPointsChange(next);onClose();}}
+                style={{flex:1,background:'#7f1d1d',border:'1px solid #991b1b',color:'#fca5a5',borderRadius:8,padding:'9px',cursor:'pointer',fontSize:13,fontFamily:'Georgia, serif'}}>
+                &#x2212; Remove Point
+              </button>
+            )}
+            <button onClick={()=>{if(!canAdd)return;onSkillPointsChange({...skillPoints,[talent.id]:pts+1});onClose();}}
+              disabled={!canAdd}
+              style={{flex:1,background:canAdd?'#14532d':'#1a1a1a',border:'1px solid '+(canAdd?'#166534':'#2a2a2a'),
+                color:canAdd?'#86efac':'#374151',borderRadius:8,padding:'9px',cursor:canAdd?'pointer':'default',fontSize:13,fontFamily:'Georgia, serif'}}>
+              {!prereqsMet?'Prereq not met':maxed?'Maxed':availablePoints<=0?'No pts left':'+ Add Point'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TALENT TREE VIEW ─────────────────────────────────────────────────────────
+function TalentTreeView({ tree, skillPoints, onSkillPointsChange, availablePoints, playerLevel, onRemoveClass }) {
+  const [tooltipTalent, setTooltipTalent] = React.useState(null);
+  const CELL_W = 96;
+  const CELL_H = 108;
+  const NODE_SIZE = 68;
+
+  const talents = tree.talents||[];
+  if(talents.length===0) return null;
+
+  const maxRow = Math.max(...talents.map(t=>t.row||0));
+  const maxCol = Math.max(...talents.map(t=>t.col||0));
+  const containerW = (maxCol+1)*CELL_W;
+  const containerH = (maxRow+1)*CELL_H;
+
+  const ncx = t=>(t.col||0)*CELL_W + CELL_W/2;
+  const ncy = t=>(t.row||0)*CELL_H + CELL_H/2;
+
+  const spentInTree = talents.reduce((s,t)=>s+(skillPoints[t.id]||0),0);
+
+  return (
+    <div style={{marginBottom:32}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,paddingBottom:8,borderBottom:'1px solid '+tree.color+'33'}}>
+        <div style={{width:10,height:10,borderRadius:'50%',background:tree.color,flexShrink:0}}/>
+        <span style={{color:tree.color,fontSize:13,fontWeight:700,letterSpacing:2,flex:1}}>{(tree.name||'').toUpperCase()}</span>
+        {spentInTree>0&&<span style={{fontSize:10,color:tree.color+'aa'}}>{spentInTree} pt{spentInTree!==1?'s':''} spent</span>}
+        <button onClick={onRemoveClass} style={{background:'transparent',border:'1px solid #3a2020',color:'#7a4040',borderRadius:5,padding:'2px 8px',cursor:'pointer',fontSize:10}}>Remove</button>
+      </div>
+      <div style={{overflowX:'auto',paddingBottom:8}}>
+        <div style={{position:'relative',width:containerW,height:containerH,margin:'0 auto'}}>
+          <svg style={{position:'absolute',top:0,left:0,width:containerW,height:containerH,pointerEvents:'none',zIndex:1}}>
+            {talents.flatMap(talent=>
+              (talent.prerequisites||[]).map(prereq=>{
+                const from=talents.find(t=>t.id===prereq.id);
+                if(!from)return null;
+                const prereqMet=(skillPoints[from.id]||0)>=(prereq.minPoints||1);
+                return (
+                  <line key={from.id+'-'+talent.id}
+                    x1={ncx(from)} y1={ncy(from)} x2={ncx(talent)} y2={ncy(talent)}
+                    stroke={prereqMet?tree.color+'99':'#2a2a1a'}
+                    strokeWidth={prereqMet?2:1.5}
+                    strokeDasharray={prereqMet?'none':'5,4'}
+                  />
+                );
+              })
+            )}
+          </svg>
+          {talents.map(talent=>{
+            const pts=skillPoints[talent.id]||0;
+            const prereqsMet=checkDbPrereqs(talent,skillPoints);
+            const maxed=pts>=(talent.maxPoints||1);
+            return (
+              <div key={talent.id} onClick={()=>setTooltipTalent(talent)}
+                title={talent.name}
+                style={{
+                  position:'absolute',
+                  left:ncx(talent)-NODE_SIZE/2,
+                  top:ncy(talent)-NODE_SIZE/2,
+                  width:NODE_SIZE,height:NODE_SIZE,
+                  border:'2px solid '+(pts>0?tree.color:prereqsMet?tree.color+'55':'#2a2a1a'),
+                  borderRadius:8,
+                  overflow:'hidden',
+                  cursor:'pointer',
+                  background:pts>0?'#1a1510':'#0a0805',
+                  opacity:prereqsMet?1:0.45,
+                  boxShadow:pts>0?'0 0 10px '+tree.color+'44':'none',
+                  zIndex:2,
+                }}>
+                {talent.image
+                  ?<img src={talent.image} alt={talent.name} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>e.target.style.display='none'}/>
+                  :<div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:'#3a3020',fontSize:8,textAlign:'center',padding:3,lineHeight:1.2}}>{talent.name}</div>
+                }
+                <div style={{position:'absolute',bottom:1,right:2,fontSize:9,color:pts>0?tree.color:'#4b5563',fontWeight:700,textShadow:'0 0 4px #000',lineHeight:1}}>
+                  {pts}/{talent.maxPoints||1}
+                </div>
+                {maxed&&<div style={{position:'absolute',inset:0,border:'2px solid '+tree.color,borderRadius:7,boxShadow:'inset 0 0 6px '+tree.color+'66',pointerEvents:'none'}}/>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {tooltipTalent&&(
+        <TalentNodeTooltip
+          talent={tooltipTalent}
+          treeColor={tree.color}
+          skillPoints={skillPoints}
+          onSkillPointsChange={onSkillPointsChange}
+          availablePoints={availablePoints}
+          playerLevel={playerLevel}
+          allTalents={talents}
+          onClose={()=>setTooltipTalent(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── HARDCODED PLAYER TALENT TREES ───────────────────────────────────────────
+const PLAYER_TALENT_TREES = {
+  adam: {
+    color: '#93c5fd',
+    talents: [
+      {
+        id: 'adam_headbutt',
+        name: 'Headbutt',
+        cooldown: 15,
+        type: 'Melee',
+        maxPts: 2,
+        levelReq: 1,
+        image: 'https://drive.google.com/thumbnail?id=1mnYWOf3W1hYOXMaEx9g9CW7Cb4lftyYi&sz=w400',
+        description: 'Headbutt the target for 100% weapon damage. If hit, the target is dazed.',
+        perPt: [
+          { pts: 1, desc: 'Deals 100% weapon damage. Inflicts Dazed for 6 seconds.' },
+          { pts: 2, desc: 'Deals 100% weapon damage. Inflicts Dazed for 9 seconds.' },
+        ],
+        prerequisites: [],
+        row: 0, col: 0,
+      },
+      {
+        id: 'adam_bash',
+        name: 'Bash',
+        cooldown: 10,
+        type: 'Melee',
+        maxPts: 5,
+        levelReq: 1,
+        image: 'https://drive.google.com/thumbnail?id=1jqDG9pKQNVXRhGm9HLnVpU86c9MvCcot&sz=w400',
+        description: 'A powerful bash that increases weapon damage.',
+        perPt: [
+          { pts: 1, desc: 'Increases melee damage by 160%.' },
+          { pts: 2, desc: 'Increases melee damage by 170%.' },
+          { pts: 3, desc: 'Increases melee damage by 180%.' },
+          { pts: 4, desc: 'Increases melee damage by 190%.' },
+          { pts: 5, desc: 'Increases melee damage by 200%.' },
+        ],
+        prerequisites: [],
+        row: 0, col: 1,
+      },
+      {
+        id: 'adam_taunt',
+        name: 'Taunt',
+        cooldown: 10,
+        type: 'Melee',
+        maxPts: 2,
+        levelReq: 1,
+        image: 'https://drive.google.com/thumbnail?id=1NpAHL2ULs7AEn9PcgVVLEvcVz7ZDV6vB&sz=w400',
+        description: 'Forces a target to attack you.',
+        perPt: [
+          { pts: 1, desc: 'Applies Taunted for 6 seconds.' },
+          { pts: 2, desc: 'Applies Taunted for 9 seconds.' },
+        ],
+        prerequisites: [],
+        row: 0, col: 2,
+      },
+      {
+        id: 'adam_incite',
+        name: 'Incite',
+        cooldown: 20,
+        type: 'Melee',
+        maxPts: 5,
+        levelReq: 6,
+        image: 'https://drive.google.com/thumbnail?id=1GLSLuPllknH3qvhrNrqUgw399QT7zTqU&sz=w400',
+        description: 'Incite the target into recklessly attacking, reducing their attack rating for a short time.',
+        perPt: [
+          { pts: 1, desc: 'Reduces target attack rating by 10% for 5 seconds.' },
+          { pts: 2, desc: 'Reduces target attack rating by 20% for 6 seconds.' },
+          { pts: 3, desc: 'Reduces target attack rating by 30% for 7 seconds.' },
+          { pts: 4, desc: 'Reduces target attack rating by 40% for 8 seconds.' },
+          { pts: 5, desc: 'Reduces target attack rating by 50% for 9 seconds.' },
+        ],
+        prerequisites: [{ id: 'adam_taunt', minPoints: 1 }],
+        row: 2, col: 2,
+      },
+      {
+        id: 'adam_backhand',
+        name: 'Backhand',
+        cooldown: 20,
+        type: 'Reaction',
+        maxPts: 1,
+        levelReq: 6,
+        image: 'https://drive.google.com/thumbnail?id=1AOBHqihAUxXSN3WwzlhoyHkyql3UCjDD&sz=w400',
+        description: 'When targeted by a spell, interrupt it with a backhand strike. Uses attack rating vs defense. If it hits, the spell is interrupted and goes on cooldown.',
+        perPt: [
+          { pts: 1, desc: 'Interrupt any spell targeting you. Attack rating vs defense. On hit: spell is interrupted and goes on cooldown. Deals no damage.' },
+        ],
+        prerequisites: [],
+        row: 2, col: 1,
+      },
+    ],
+  },
+  brian: { color: '#86efac', talents: [{
+      id: 'brian_mark', name: 'Mark', type: 'Ranged', maxPts: 1,
+      levelReq: 1, cooldown: 20, row: 0, col: 0,
+      image: 'https://drive.google.com/thumbnail?id=1ME3OLhmKv-lOgmquwyedXDEecTTGRbZL&sz=w400',
+      description: 'Mark the target for 8 seconds. While marked, Gun damage dealt to them is increased by 10% and enables other talents to be used against them.',
+      perPt: [
+        { pts: 1, desc: 'Target is Marked for 8 seconds. Gun damage vs Marked targets +10%.' },
+      ],
+    },
+    {
+      id: 'brian_precise_shot', name: 'Precise Shot', type: 'Ranged', maxPts: 5,
+      levelReq: 1, cooldown: 10, row: 0, col: 1,
+      image: 'https://drive.google.com/thumbnail?id=1QmrceltN-MK4bYwfs7IJLvLlPZTwmIhg&sz=w400',
+      description: 'A precise shot that increases weapon damage.',
+      perPt: [
+        { pts: 1, desc: '160% weapon damage.' },
+        { pts: 2, desc: '170% weapon damage.' },
+        { pts: 3, desc: '180% weapon damage.' },
+        { pts: 4, desc: '190% weapon damage.' },
+        { pts: 5, desc: '200% weapon damage.' },
+      ],
+    },
+    {
+      id: 'brian_iron_sights', name: 'Iron Sights', type: 'Passive', maxPts: 5,
+      levelReq: 1, cooldown: 0, row: 0, col: 2,
+      image: 'https://drive.google.com/thumbnail?id=1Zg8FgSvdQFUAJbqjRUW6G9rlPoDx8Qo4&sz=w400',
+      description: 'Increases attack rating by 10% per point when a Gun is equipped.',
+      weaponCondition: 'Guns',
+      statBonuses: [{stat:'Attack Rating', amount: 10, sign:'+', perPoint: true}],
+      perPt: [
+        { pts: 1, desc: '+10% Attack Rating with Guns.' },
+        { pts: 2, desc: '+20% Attack Rating with Guns.' },
+        { pts: 3, desc: '+30% Attack Rating with Guns.' },
+        { pts: 4, desc: '+40% Attack Rating with Guns.' },
+        { pts: 5, desc: '+50% Attack Rating with Guns.' },
+      ],
+    },
+    {
+      id: 'brian_warning_shot',
+      name: 'Warning Shot',
+      cooldown: 20,
+      type: 'Reaction',
+      maxPts: 1,
+      levelReq: 6,
+      image: 'https://drive.google.com/thumbnail?id=1xEv2z54T7Z2bEnFnKjZJGP4V5DyJVNvu&sz=w400',
+      description: 'When targeted by a spell, interrupt it with a warning shot. Requires a Gun. Uses attack rating vs defense. If it hits, the spell is interrupted and goes on cooldown.',
+      perPt: [
+        { pts: 1, desc: 'Interrupt any spell targeting you (Gun required). Attack rating vs defense. On hit: spell is interrupted and goes on cooldown. Deals no damage.' },
+      ],
+      weaponCondition: 'Guns',
+      prerequisites: [],
+      row: 2, col: 1,
+    }] },
+  craig: { color: '#fca5a5', talents: [{
+      id: 'craig_fire_bolt', name: 'Fire Bolt', type: 'Magic', maxPts: 5,
+      levelReq: 1, cooldown: 10, row: 0, col: 0,
+      image: 'https://drive.google.com/thumbnail?id=15A5SL1kvgUiF2wcC12T-SgtidLS9d_mC&sz=w400',
+      description: 'A bolt of fire that deals Fire damage to a single target.',
+      perPt: [
+        { pts: 1, desc: '5–10 Fire damage.' },
+        { pts: 2, desc: '10–15 Fire damage.' },
+        { pts: 3, desc: '15–20 Fire damage.' },
+        { pts: 4, desc: '20–25 Fire damage.' },
+        { pts: 5, desc: '25–30 Fire damage.' },
+      ],
+    },
+    {
+      id: 'craig_ice_bolt', name: 'Ice Bolt', type: 'Magic', maxPts: 5,
+      levelReq: 1, cooldown: 10, row: 0, col: 1,
+      image: 'https://drive.google.com/thumbnail?id=15YhcrjVPGsafEQu22dy5uuM6vCuQPBCV&sz=w400',
+      description: 'A bolt of ice that deals Frost damage to a single target.',
+      perPt: [
+        { pts: 1, desc: '5–10 Frost damage.' },
+        { pts: 2, desc: '10–15 Frost damage.' },
+        { pts: 3, desc: '15–20 Frost damage.' },
+        { pts: 4, desc: '20–25 Frost damage.' },
+        { pts: 5, desc: '25–30 Frost damage.' },
+      ],
+    },
+    {
+      id: 'craig_lightning_bolt', name: 'Lightning Bolt', type: 'Magic', maxPts: 5,
+      levelReq: 1, cooldown: 10, row: 0, col: 2,
+      image: 'https://drive.google.com/thumbnail?id=1XhWXQf-4OR9NY4tHxZiuujxHTaUKaqmy&sz=w400',
+      description: 'A bolt of lightning that deals Lightning damage to a single target.',
+      perPt: [
+        { pts: 1, desc: '5–10 Lightning damage.' },
+        { pts: 2, desc: '10–15 Lightning damage.' },
+        { pts: 3, desc: '15–20 Lightning damage.' },
+        { pts: 4, desc: '20–25 Lightning damage.' },
+        { pts: 5, desc: '25–30 Lightning damage.' },
+      ],
+    }] },
+};
+
+const TALENT_TYPE_COLORS = {
+  Passive:'#9ca3af', Melee:'#f87171', Ranged:'#34d399',
+  'Spell Attack':'#a78bfa', 'Spell Heal':'#4ade80', Reaction:'#60a5fa',
+  Buff:'#fb923c', Enchantment:'#c084fc', Summon:'#67e8f9',
+};
+
+function HardcodedTalentTooltip({ talent, treeColor, currentPts, rect, onAdd, onRemove, availablePoints }) {
+  const typeColor = TALENT_TYPE_COLORS[talent.type] || '#ccc';
+  const canAdd = currentPts < talent.maxPts && availablePoints > 0;
+  const canRemove = currentPts > 0;
+
+  // Position: prefer right of node; flip left if near right edge
+  const style = {
+    position: 'fixed',
+    zIndex: 9999,
+    background: '#0d0b08',
+    border: '1px solid ' + treeColor + '88',
+    borderRadius: 8,
+    padding: '12px 14px',
+    width: 240,
+    boxShadow: '0 4px 24px rgba(0,0,0,0.8)',
+    fontFamily: 'Georgia, serif',
+    pointerEvents: 'auto',
+  };
+
+  if (rect) {
+    const left = rect.right + 12;
+    const top = rect.top - 10;
+    style.left = left + 240 > window.innerWidth ? rect.left - 252 : left;
+    style.top = Math.min(top, window.innerHeight - 320);
+  }
+
+  return (
+    <div style={style}>
+      <div style={{fontSize:14,fontWeight:700,color:treeColor,marginBottom:2}}>{talent.name}</div>
+      <div style={{fontSize:11,color:typeColor,textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>{talent.type}</div>
+      <div style={{display:'flex',gap:12,marginBottom:6,flexWrap:'wrap'}}>
+        {talent.levelReq > 1 && (
+          <div style={{fontSize:10,color:'#888'}}>Requires Level {talent.levelReq}</div>
+        )}
+        {talent.cooldown && (
+          <div style={{fontSize:10,color:'#60a5fa'}}>⏱ {talent.cooldown}s cooldown</div>
+        )}
+      </div>
+      <div style={{fontSize:12,color:'#bbb',marginBottom:10,lineHeight:1.5}}>{talent.description}</div>
+      <div style={{borderTop:'1px solid #2a2010',paddingTop:8,marginBottom:10}}>
+        {talent.perPt.map(p => (
+          <div key={p.pts} style={{display:'flex',gap:8,alignItems:'baseline',marginBottom:3}}>
+            <span style={{
+              fontSize:10,fontWeight:700,color:p.pts===currentPts?treeColor:p.pts<currentPts?treeColor+'88':'#555',
+              minWidth:14,textAlign:'right'
+            }}>{p.pts}</span>
+            <span style={{
+              fontSize:11,
+              color:p.pts===currentPts?'#e0e0e0':p.pts<currentPts?'#888':'#444',
+            }}>{p.desc}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+        <button onClick={onRemove} disabled={!canRemove}
+          style={{background:'transparent',border:'1px solid '+(canRemove?'#8b3030':'#2a1a1a'),
+            color:canRemove?'#c07070':'#3a2020',borderRadius:4,padding:'3px 10px',
+            cursor:canRemove?'pointer':'default',fontSize:11}}>- Remove</button>
+        <button onClick={onAdd} disabled={!canAdd}
+          style={{background:canAdd?'#14532d':'transparent',
+            border:'1px solid '+(canAdd?'#166534':'#1a2a1a'),
+            color:canAdd?'#86efac':'#2a4a2a',borderRadius:4,padding:'3px 10px',
+            cursor:canAdd?'pointer':'default',fontSize:11}}>+ Add</button>
+      </div>
+    </div>
+  );
+}
+
+function HardcodedTreeView({ playerId, skillPoints, onSkillPointsChange, availablePoints, playerLevel }) {
+  const [hovered, setHovered] = React.useState(null); // {talent, rect} — click to open, click outside to close
+  const treeData = PLAYER_TALENT_TREES[playerId];
+  if (!treeData || treeData.talents.length === 0) return (
+    <div style={{textAlign:'center',padding:'40px 0',color:'#444',fontSize:13,fontStyle:'italic'}}>
+      No talents defined yet.
+    </div>
+  );
+
+  const { color, talents } = treeData;
+  const CELL_W = 110;
+  const CELL_H = 130;
+  const NODE_SIZE = 72;
+  const NAME_H = 18;
+
+  const maxRow = Math.max(...talents.map(t => t.row || 0));
+  const maxCol = Math.max(...talents.map(t => t.col || 0));
+  const containerW = (maxCol + 1) * CELL_W;
+  const containerH = (maxRow + 1) * CELL_H;
+
+  const ncx = t => (t.col || 0) * CELL_W + CELL_W / 2;
+  const ncy = t => (t.row || 0) * CELL_H + CELL_H / 2 + NAME_H / 2;
+
+  const checkPrereqs = (talent) => {
+    if (!talent.prerequisites || talent.prerequisites.length === 0) return true;
+    return talent.prerequisites.every(p => (skillPoints[p.id] || 0) >= (p.minPoints || 1));
+  };
+
+  // Build row -> min level req map
+  const rowLevelReqs = {};
+  talents.forEach(t => {
+    const r = t.row || 0;
+    const lvl = t.levelReq || 1;
+    if (rowLevelReqs[r] === undefined || lvl > rowLevelReqs[r]) rowLevelReqs[r] = lvl;
+  });
+  const LABEL_W = 60;
+
+  return (
+    <div style={{overflowX:'auto',paddingBottom:8}}>
+      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'center'}}>
+        {/* Row level labels */}
+        <div style={{flexShrink:0,width:LABEL_W,position:'relative',height:containerH}}>
+          {Object.entries(rowLevelReqs).map(([row, lvl]) => (
+            <div key={row} style={{
+              position:'absolute',
+              top: parseInt(row) * CELL_H + CELL_H / 2 - 8,
+              right: 8,
+              fontSize: 10,
+              color: '#c9a22799',
+              textAlign: 'right',
+              lineHeight: 1.3,
+              whiteSpace: 'nowrap',
+            }}>
+              <div style={{fontSize:9,color:'#666',textTransform:'uppercase',letterSpacing:0.5}}>Lvl</div>
+              <div style={{color:'#c9a227',fontWeight:700,fontSize:12}}>{lvl}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{position:'relative',width:containerW,height:containerH}}>
+        {/* SVG connection lines */}
+        <svg style={{position:'absolute',top:0,left:0,width:containerW,height:containerH,pointerEvents:'none',zIndex:1}}>
+          {talents.flatMap(talent =>
+            (talent.prerequisites || []).map(prereq => {
+              const from = talents.find(t => t.id === prereq.id);
+              if (!from) return null;
+              const met = (skillPoints[from.id] || 0) >= (prereq.minPoints || 1);
+              return (
+                <line key={from.id + '-' + talent.id}
+                  x1={ncx(from)} y1={ncy(from)} x2={ncx(talent)} y2={ncy(talent)}
+                  stroke={met ? color + '99' : '#2a2a1a'}
+                  strokeWidth={met ? 2 : 1.5}
+                  strokeDasharray={met ? 'none' : '5,4'}
+                />
+              );
+            })
+          )}
+        </svg>
+
+        {/* Talent nodes */}
+        {talents.map(talent => {
+          const pts = skillPoints[talent.id] || 0;
+          const prereqsMet = checkPrereqs(talent);
+          const levelOk = playerLevel >= (talent.levelReq || 1);
+          const unlocked = prereqsMet && levelOk;
+          const maxed = pts >= talent.maxPts;
+          const cx = ncx(talent);
+          const cy = ncy(talent);
+
+          return (
+            <div key={talent.id} style={{
+              position: 'absolute',
+              left: cx - CELL_W / 2,
+              top: (talent.row || 0) * CELL_H,
+              width: CELL_W,
+              height: CELL_H,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'flex-start',
+              paddingTop: 4,
+              zIndex: 2,
+            }}>
+              {/* Name above */}
+              <div style={{
+                fontSize: 10,
+                color: pts > 0 ? color : unlocked ? '#888' : '#444',
+                textAlign: 'center',
+                lineHeight: 1.2,
+                height: NAME_H,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '100%',
+                paddingHorizontal: 2,
+                overflow: 'hidden',
+                marginBottom: 4,
+                letterSpacing: 0.3,
+              }}>{talent.name}</div>
+
+              {/* Image square */}
+              <div
+                onClick={e => {
+                  e.stopPropagation();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setHovered(prev => prev?.talent?.id === talent.id ? null : { talent, rect });
+                }}
+                style={{
+                  width: NODE_SIZE,
+                  height: NODE_SIZE,
+                  border: '2px solid ' + (pts > 0 ? color : unlocked ? color + '55' : '#2a2a1a'),
+                  borderRadius: 6,
+                  overflow: 'hidden',
+                  cursor: 'pointer',
+                  background: pts > 0 ? '#1a1510' : '#0a0805',
+                  opacity: unlocked ? 1 : 0.4,
+                  boxShadow: maxed ? '0 0 12px ' + color + '66' : pts > 0 ? '0 0 6px ' + color + '33' : 'none',
+                  flexShrink: 0,
+                  position: 'relative',
+                }}>
+                {talent.image
+                  ? <img src={talent.image} alt={talent.name}
+                      style={{width:'100%',height:'100%',objectFit:'cover'}}
+                      onError={e=>e.target.style.display='none'}/>
+                  : <div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',
+                      justifyContent:'center',color:'#3a3020',fontSize:9,textAlign:'center',padding:3}}>{talent.name}</div>
+                }
+                {maxed && <div style={{position:'absolute',inset:0,border:'2px solid '+color,borderRadius:5,
+                  boxShadow:'inset 0 0 8px '+color+'66',pointerEvents:'none'}}/>}
+              </div>
+
+              {/* Pts below */}
+              <div style={{
+                fontSize: 11,
+                color: pts > 0 ? color : '#444',
+                fontFamily: 'monospace',
+                marginTop: 5,
+                fontWeight: 700,
+              }}>{pts}/{talent.maxPts}</div>
+            </div>
+          );
+        })}
+        </div>
+      </div>
+
+      {/* Click-to-open tooltip — click outside to close */}
+      {hovered && (
+        <div style={{position:'fixed',inset:0,zIndex:9998}} onClick={()=>setHovered(null)}/>
+      )}
+      {hovered && (
+        <HardcodedTalentTooltip
+          talent={hovered.talent}
+          treeColor={color}
+          currentPts={skillPoints[hovered.talent.id] || 0}
+          rect={hovered.rect}
+          availablePoints={availablePoints}
+          onAdd={() => {
+            const pts = skillPoints[hovered.talent.id] || 0;
+            if (pts < hovered.talent.maxPts && availablePoints > 0) {
+              onSkillPointsChange({...skillPoints, [hovered.talent.id]: pts + 1});
+            }
+          }}
+          onRemove={() => {
+            const pts = skillPoints[hovered.talent.id] || 0;
+            if (pts > 0) {
+              const next = {...skillPoints, [hovered.talent.id]: pts - 1};
+              if (next[hovered.talent.id] === 0) delete next[hovered.talent.id];
+              onSkillPointsChange(next);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+
+// ─── SKILL TREE PANEL ─────────────────────────────────────────────────────────
+function SkillTreePanel({ playerId, skillPoints, onSkillPointsChange, playerLevel, bonusPoints, onBonusPointsChange, activeClasses, onActiveClassesChange }) {
+  const totalPoints = playerLevel + bonusPoints;
+  const spentPoints = Object.values(skillPoints).reduce((s,v)=>s+v, 0);
+  const availablePoints = totalPoints - spentPoints;
+
+  // Hardcoded trees — no DB lookup needed
+
+  return (
+    <div style={{background:'#0d0b08',minHeight:'60vh',fontFamily:'Georgia, serif',color:'#ccc',padding:20}}>
+      <div style={{textAlign:'center',marginBottom:16}}>
+        <h2 style={{color:'#c9a227',fontSize:20,margin:0,letterSpacing:3,textTransform:'uppercase'}}>Talents</h2>
+        <div style={{width:180,height:1,background:'linear-gradient(90deg,transparent,#c9a227,transparent)',margin:'6px auto'}}/>
+      </div>
+      <div style={{display:'flex',gap:12,alignItems:'center',justifyContent:'center',flexWrap:'wrap',
+        background:'#1a1510',border:'1px solid #3a3020',borderRadius:8,padding:'10px 16px',
+        maxWidth:560,margin:'0 auto 20px'}}>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <label style={{color:'#c9a227',fontSize:11,textTransform:'uppercase',letterSpacing:1}}>Level</label>
+          <span style={{width:48,background:'#0d0b08',border:'1px solid #c9a22766',color:'#f0c040',
+            borderRadius:4,padding:'3px 6px',fontSize:13,textAlign:'center',fontFamily:'monospace',display:'inline-block'}}>{playerLevel}</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <label style={{color:'#c9a227',fontSize:11,textTransform:'uppercase',letterSpacing:1}}>Bonus Pts</label>
+          <input type="number" min={0} max={99} value={bonusPoints}
+            onChange={e=>onBonusPointsChange(Math.max(0,parseInt(e.target.value)||0))}
+            style={{width:48,background:'#0d0b08',border:'1px solid #c9a22766',color:'#80d0ff',
+              borderRadius:4,padding:'3px 6px',fontSize:13,textAlign:'center',fontFamily:'monospace'}}/>
+        </div>
+        <div style={{background:'#0d0b08',border:'1px solid #c9a22766',borderRadius:4,padding:'3px 10px',fontSize:12}}>
+          <span style={{color:'#888'}}>Available: </span>
+          <span style={{color:availablePoints>0?'#90d080':availablePoints<0?'#ef4444':'#d07070',fontWeight:700}}>{availablePoints}</span>
+          <span style={{color:'#555'}}> / {totalPoints}</span>
+        </div>
+        <button onClick={()=>{if(window.confirm('Reset all talent points?')){onSkillPointsChange({});}}}
+          style={{background:'transparent',border:'1px solid #8b3030',color:'#c07070',
+            borderRadius:4,padding:'3px 10px',cursor:'pointer',fontSize:11,
+            letterSpacing:1,textTransform:'uppercase'}}>
+          Reset All
+        </button>
+      </div>
+
+
+      <HardcodedTreeView
+        playerId={playerId}
+        skillPoints={skillPoints}
+        onSkillPointsChange={onSkillPointsChange}
+        availablePoints={availablePoints}
+        playerLevel={playerLevel}
+      />
+    </div>
+  );
+}
+
+// ─── SUB-COMPONENTS ───────────────────────────────────────────────────────────
+function StatValue({value, bonus, suffix=""}) {
+  return (
+    <span style={{fontSize:18, color:bonus?"#00ff88":"#fff", fontWeight:bonus?"bold":"normal"}}>
+      {value}{suffix}
+      {!!bonus&&<span style={{fontSize:10,color:"#00cc66",marginLeft:5}}>({bonus>=0?"+":""}{bonus})</span>}
+    </span>
+  );
+}
+
+// ─── EQUIPMENT SLOT MODAL ────────────────────────────────────────────────────
+function EquipSlotModal({ slotKey, label, data, onChange, isWeapon, isArmor, isBelt, attrMod, extraDamage, minMaxBonus, onClose }) {
+  const [local, setLocal] = useState({...data});
+  const set = (f,v) => setLocal(prev => ({...prev,[f]:v}));
+  const save = () => { onChange(local); onClose(); };
+  const si = {...iBase,width:"100%",padding:"7px 8px",fontSize:14,boxSizing:"border-box"};
+
+  const minBase = isWeapon ? (parseInt(local.minDmg)||0)+(minMaxBonus?.min||0) : 0;
+  const maxBase = isWeapon ? (parseInt(local.maxDmg)||0)+(minMaxBonus?.max||0) : 0;
+  const minT = isWeapon ? Math.round(minBase*(1+(attrMod||0)/100)) : 0;
+  const maxT = isWeapon ? Math.round(maxBase*(1+(attrMod||0)/100)) : 0;
+  const extraTypes = isWeapon ? Object.keys(extraDamage||{}).filter(t=>extraDamage[t]) : [];
+  const totalBonus = extraTypes.reduce((s,t)=>s+(extraDamage[t]||0),0);
+  const totalColor = extraTypes.length===1 ? DAMAGE_COLORS[extraTypes[0]] : "#fff";
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:300}}
+         onClick={e => e.target===e.currentTarget && onClose()}>
+      <div style={{background:'#16213e',borderRadius:12,border:'1px solid #2a2a4a',width:440,maxHeight:'85vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{padding:'14px 20px',borderBottom:'1px solid #2a2a4a',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <h3 style={{margin:0,color:'#c9a227',fontSize:14,letterSpacing:2,textTransform:'uppercase'}}>{label}</h3>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'#555',cursor:'pointer',fontSize:18,lineHeight:1}}>✕</button>
+        </div>
+        <div style={{padding:'16px 20px',overflowY:'auto',display:'flex',flexDirection:'column',gap:14}}>
+
+          {/* Image URL */}
+          <div>
+            <div style={fLabel}>IMAGE URL</div>
+            <input type="text" value={local.image||""} onChange={e=>set("image",e.target.value)}
+              placeholder="Paste image URL or Google Drive thumbnail URL..."
+              style={si}/>
+            {local.image && (
+              <div style={{marginTop:8,width:80,height:80,borderRadius:6,overflow:'hidden',border:'1px solid #2a2a4a'}}>
+                <img src={local.image} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>e.target.style.display='none'}/>
+              </div>
+            )}
+          </div>
+
+          {/* Weapon-specific fields */}
+          {isWeapon && (<>
+            <div>
+              <div style={fLabel}>TYPE</div>
+              <select value={local.type||"Melee"} onChange={e=>set("type",e.target.value)} style={selBase}>
+                <option>Melee</option><option>Ranged</option><option>Shield</option>
+              </select>
+            </div>
+            <div>
+              <div style={fLabel}>WEAPON NAME</div>
+              <input type="text" value={local.name||""} onChange={e=>set("name",e.target.value)} placeholder="Weapon name" style={si}/>
+            </div>
+            <div>
+              <div style={fLabel}>BASE DAMAGE</div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <input type="number" value={local.minDmg||""} onChange={e=>set("minDmg",e.target.value)} placeholder="Min" style={{...si,width:"50%"}}/>
+                <span style={{color:"#444"}}>–</span>
+                <input type="number" value={local.maxDmg||""} onChange={e=>set("maxDmg",e.target.value)} placeholder="Max" style={{...si,width:"50%"}}/>
+              </div>
+            </div>
+            <div>
+              <div style={fLabel}>DEFENSE BONUS</div>
+              <input type="number" value={local.defenseMod||""} onChange={e=>set("defenseMod",e.target.value)} placeholder="0" style={si}/>
+            </div>
+            <div style={{background:'#0f0f23',borderRadius:6,padding:'10px 14px'}}>
+              <div style={fLabel}>TOTAL DAMAGE</div>
+              <span style={{fontSize:18,color:totalColor,fontWeight:'bold'}}>{minT+totalBonus} – {maxT+totalBonus}</span>
+              {extraTypes.map(t=><div key={t} style={{fontSize:12,color:DAMAGE_COLORS[t]}}>+{extraDamage[t]} {t}</div>)}
+              <div style={{fontSize:11,color:'#555',marginTop:4}}>Attr modifier: +{attrMod||0}% ({(local.type||"Melee")==="Ranged"?"AGI":"STR"})</div>
+            </div>
+          </>)}
+
+          {/* Armor value */}
+          {isArmor && (
+            <div>
+              <div style={fLabel}>ARMOR VALUE</div>
+              <input type="number" value={local.armor||""} onChange={e=>set("armor",e.target.value)} placeholder="0" style={si}/>
+            </div>
+          )}
+
+          {/* Item name for non-weapon slots */}
+          {!isWeapon && (
+            <div>
+              <div style={fLabel}>ITEM NAME</div>
+              <input type="text" value={local.type||local.name||""} onChange={e=>set(isArmor?"type":"name",e.target.value)} placeholder="Item name..." style={si}/>
+            </div>
+          )}
+
+          {/* Belt quick slots */}
+          {isBelt && (
+            <div>
+              <div style={fLabel}>QUICK SLOTS</div>
+              <input type="number" value={local.quickSlots||""} onChange={e=>set("quickSlots",e.target.value)} placeholder="0" style={si}/>
+            </div>
+          )}
+
+          {/* Traits */}
+          <div>
+            <div style={fLabel}>TRAITS / MODIFIERS</div>
+            <input type="text" value={local.traits||""} onChange={e=>set("traits",e.target.value)}
+              placeholder="+5 Fire Damage Main Hand, +10 Attack Rating..."
+              style={si}/>
+          </div>
+        </div>
+        <div style={{padding:'12px 20px',borderTop:'1px solid #2a2a4a',display:'flex',gap:8,justifyContent:'flex-end'}}>
+          {/* Clear button */}
+          <button onClick={()=>{onChange({...(isWeapon?defHand:isArmor?defArmor:isBelt?defBelt:defSimple)});onClose();}}
+            style={{background:'transparent',border:'1px solid #4b5563',color:'#6b7280',borderRadius:5,padding:'6px 14px',cursor:'pointer',fontSize:13,marginRight:'auto'}}>
+            Clear Slot
+          </button>
+          <button onClick={onClose} style={{background:'#374151',color:'#f9fafb',border:'none',borderRadius:5,padding:'6px 14px',cursor:'pointer',fontSize:13}}>Cancel</button>
+          <button onClick={save} style={{background:'#1d4ed8',color:'#fff',border:'none',borderRadius:5,padding:'6px 14px',cursor:'pointer',fontSize:13}}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── EQUIPMENT GRID ───────────────────────────────────────────────────────────
+const SLOT_SIZE = 100;
+
+function EquipSlot({ slotKey, label, data, icon, onClick, onUnequip, unequipMsg, blocked }) {
+  const [popup, setPopup] = React.useState(false);
+  const hasImage = data && data.image;
+  const itemName = data ? (data.name || "") : "";
+  const hasItem = hasImage || itemName;
+  const isDBItem = data && data.id;
+  const rc = isDBItem ? (RARITY_COLORS_INV[data._dbItem && data._dbItem.rarity] || '#4a4a7a') : (hasItem ? '#4a4a7a' : '#2a2a4a');
+  const dbItem = isDBItem ? (data._dbItem || data) : null;
+
+  function handleClick() {
+    if (blocked) return;
+    if (isDBItem) setPopup(true);
+    else onClick();
+  }
+
+  return (
+    <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:5}}>
+      <div style={{position:'relative', width:SLOT_SIZE, height:SLOT_SIZE}}>
+        <div onClick={handleClick} style={{
+          width:'100%', height:'100%',
+          background: blocked ? '#1a0a0a' : (hasImage ? 'transparent' : '#0a0a18'),
+          border: '2px solid '+(blocked ? '#7f1d1d' : rc),
+          borderRadius: 8,
+          display:'flex', alignItems:'center', justifyContent:'center',
+          overflow:'hidden', cursor: blocked ? 'not-allowed' : 'pointer',
+          transition:'border-color 0.15s',
+          opacity: blocked ? 0.5 : 1,
+          flexShrink:0,
+        }}>
+          {blocked
+            ? <span style={{fontSize:18,opacity:0.5}}>🚫</span>
+            : hasImage
+              ? <img src={data.image} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>{e.target.style.display='none';}}/>
+              : <span style={{fontSize:22, opacity:0.25}}>{icon}</span>
+          }
+          {data && data.traits && !blocked && <div style={{position:'absolute',top:4,right:4,width:6,height:6,borderRadius:'50%',background:'#c9a227'}}/>}
+        </div>
+      </div>
+      <div style={{fontSize:10,color: blocked ? '#7f1d1d' : (hasItem ? '#9ca3af' : '#3a3a5a'),letterSpacing:1,textAlign:'center',maxWidth:SLOT_SIZE,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+        {blocked ? 'TWO-HANDED' : (hasItem ? (itemName || label.toUpperCase()) : label.toUpperCase())}
+      </div>
+      {unequipMsg && <div style={{fontSize:9,color:'#f87171',textAlign:'center',maxWidth:SLOT_SIZE}}>{unequipMsg}</div>}
+      {popup && dbItem && (
+        <ItemStatsPopup item={dbItem} mode="equipped"
+          onClose={()=>setPopup(false)}
+          onUnequip={()=>{setPopup(false); onUnequip(slotKey);}}
+        />
+      )}
+    </div>
+  );
+}
+
+function EquipmentGrid({ sheet, onUpdate, allDamage, allMinMax, sv, onUnequip, unequipMsgs }) {
+  const [openSlot, setOpenSlot] = useState(null);
+  const { mainHand, offHand, head, body, hands, feet, back, belt, amulet, leftRing, rightRing } = sheet;
+  const set = (field, value) => onUpdate({[field]: value});
+
+  const attrModFor = t => t==="Ranged" ? sv("Agility") : sv("Strength");
+
+  const SLOTS = {
+    back:      { label:'Back',      data:back,      icon:'🪽', isArmor:true },
+    head:      { label:'Head',      data:head,      icon:'⛑',  isArmor:false },
+    amulet:    { label:'Amulet',    data:amulet,    icon:'📿', isArmor:false },
+    mainHand:  { label:'Main Hand', data:mainHand,  icon:'⚔',  isWeapon:true },
+    body:      { label:'Body',      data:body,      icon:'🦺', isArmor:true },
+    offHand:   { label:'Off Hand',  data:offHand,   icon:'🛡',  isWeapon:true },
+    hands:     { label:'Hands',     data:hands,     icon:'🧤', isArmor:false },
+    belt:      { label:'Waist',     data:belt,      icon:'🔗', isBelt:true },
+    feet:      { label:'Feet',      data:feet,      icon:'👢', isArmor:false },
+    leftRing:  { label:'Left Ring', data:leftRing,  icon:'💍', isArmor:false },
+    rightRing: { label:'Right Ring',data:rightRing, icon:'💍', isArmor:false },
+  };
+
+  const rows = [
+    ['back','head','amulet'],
+    ['mainHand','body','offHand'],
+    ['hands','belt','feet'],
+    ['leftRing','rightRing'],
+  ];
+
+  const gap = 16;
+
+  const openData = openSlot ? SLOTS[openSlot] : null;
+
+  const twoHandedBlock = !!(sheet.mainHand && sheet.mainHand.twoHanded);
+
+  return (
+    <div>
+      <div style={{display:'flex',flexDirection:'column',gap:gap,alignItems:'center'}}>
+        {rows.map((row,ri) => (
+          <div key={ri} style={{display:'flex',gap:gap,justifyContent:'center'}}>
+            {row.map(key => {
+              const slot = SLOTS[key];
+              return (
+                <EquipSlot
+                  key={key}
+                  slotKey={key}
+                  label={slot.label}
+                  data={slot.data}
+                  icon={slot.icon}
+                  onClick={() => setOpenSlot(key)}
+                  onUnequip={onUnequip}
+                  unequipMsg={unequipMsgs && unequipMsgs[key]}
+                  blocked={key === 'offHand' && twoHandedBlock}
+                />
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      {openSlot && openData && (
+        <EquipSlotModal
+          slotKey={openSlot}
+          label={openData.label}
+          data={openData.data}
+          onChange={v => set(openSlot, v)}
+          isWeapon={!!openData.isWeapon}
+          isArmor={!!openData.isArmor}
+          isBelt={!!openData.isBelt}
+          attrMod={openData.isWeapon ? attrModFor(openData.data.type) : 0}
+          extraDamage={openSlot==='mainHand' ? allDamage.main : openSlot==='offHand' ? allDamage.off : {}}
+          minMaxBonus={openSlot==='mainHand' ? allMinMax.main : openSlot==='offHand' ? allMinMax.off : {min:0,max:0}}
+          onClose={() => setOpenSlot(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── EQUIP HELPERS ─────────────────────────────────────────────────────────────
+function getTargetSlotKey(item, sheet) {
+  // Weapons/Charms are handled directly in handleEquip (handedness logic)
+  if (item.category === 'Weapons') return '__weapon__';
+  if (item.category === 'Charms') return 'offHand';
+  if (item.category === 'Armor' || item.category === 'Clothing') {
+    if (item.slot === 'Body')             return 'body';
+    if (item.slot === 'Head')             return 'head';
+    if (item.slot === 'Hands')            return 'hands';
+    if (item.slot === 'Feet')             return 'feet';
+    if (item.slot === 'Waist')            return 'belt';
+    if (item.slot === 'Back / Shoulders') return 'back';
+  }
+  if (item.category === 'Jewelry') {
+    if (item.subcategory === 'Amulets')  return 'amulet';
+    if (item.subcategory === 'Circlets') return 'head';
+    if (item.subcategory === 'Rings') {
+      // Pick first empty ring slot
+      const lr = sheet.leftRing;
+      if (!lr || (!lr.id && !lr.name && !lr.type)) return 'leftRing';
+      return 'rightRing';
+    }
+  }
+  return null;
+}
+
+function slotIsOccupied(slotKey, data) {
+  if (!data) return false;
+  if (data.id) return true;
+  if (slotKey === 'mainHand' || slotKey === 'offHand') return !!(data.name);
+  return !!(data.type || data.name);
+}
+
+function dbItemToSlotData(item, slotKey) {
+  const base = { id: item.id, _dbItem: item, traits: item.traits||'', image: item.image||'' };
+  if (slotKey === 'mainHand' || slotKey === 'offHand') {
+    const isTwoH = (item.handedness === 'Two-Handed');
+    return { ...base, type: item.weaponType||'Melee', name: item.name,
+      physDmgType: item.physDmgType||'Blunt',
+      subcategory: item.subcategory||'',
+      minDmg: item.minDmg||'', maxDmg: item.maxDmg||'', defenseMod: item.defenseMod||'',
+      weaponSpeed: parseFloat(item.weaponSpeed)||2.00,
+      twoHanded: isTwoH, hitSound: item.hitSound||'', missSound: item.missSound||'' };
+  }
+  if (['head','body','hands','feet','back'].includes(slotKey)) {
+    return { ...base, type: item.name, bluntRes: item.bluntRes||'', cleavingRes: item.cleavingRes||'', piercingSlashingRes: item.piercingSlashingRes||'' };
+  }
+  if (slotKey === 'belt') {
+    return { ...base, name: item.name, quickSlots: '' };
+  }
+  return { ...base, name: item.name };
+}
+
+const RARITY_COLORS_INV = {Common:'#9ca3af',Uncommon:'#4ade80',Rare:'#60a5fa',Legendary:'#f59e0b'};
+
+function ItemStatsPopup({item, onClose, onEquip, onUnequip, onRemove, onTrade, mode}) {
+  const rc = RARITY_COLORS_INV[item.rarity] || '#9ca3af';
+  const isWeaponCat = item.category === 'Weapons';
+  const isArmorCat  = item.category === 'Armor' || item.category === 'Clothing';
+  function statRow(label, val, color) {
+    if (!val) return null;
+    return (
+      <div style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid #1a1a2e'}}>
+        <span style={{fontSize:11,color:'#6b7280'}}>{label}</span>
+        <span style={{fontSize:11,color:color||'#f9fafb',fontWeight:600}}>{val}</span>
+      </div>
+    );
+  }
+  return (
+    <div onClick={function(e){if(e.target===e.currentTarget)onClose();}}
+      style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',
+        justifyContent:'center',zIndex:700,padding:16}}>
+      <div style={{background:'#16213e',borderRadius:12,border:'1px solid #2a2a4a',
+        width:'100%',maxWidth:340,overflow:'hidden'}}>
+        <div style={{padding:'12px 16px',borderBottom:'1px solid #2a2a4a',
+          display:'flex',justifyContent:'space-between',alignItems:'center',background:'#0f172a'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            {item.image && (
+              <div style={{width:44,height:44,borderRadius:6,overflow:'hidden',border:'2px solid '+rc+'55',flexShrink:0}}>
+                <img src={item.image} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={function(e){e.target.style.display='none';}}/>
+              </div>
+            )}
+            <div>
+              <div style={{fontSize:13,color:rc,fontWeight:700}}>{item.name}</div>
+              <span style={{fontSize:9,color:rc,background:rc+'22',border:'1px solid '+rc+'44',
+                borderRadius:3,padding:'1px 5px',letterSpacing:1,fontWeight:700}}>{item.rarity||'Common'}</span>
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'#6b7280',cursor:'pointer',fontSize:18,lineHeight:1}}>X</button>
+        </div>
+        <div style={{padding:'12px 16px',display:'flex',flexDirection:'column'}}>
+          {statRow('Category', item.category + (item.subcategory ? ' - '+item.subcategory : ''))}
+          {item.slot ? statRow('Slot', item.slot) : null}
+          {item.handedness && item.handedness !== 'Either' ? statRow('Hand', item.handedness) : null}
+          {isWeaponCat && item.minDmg ? statRow('Damage', item.minDmg+' - '+item.maxDmg+' '+(item.physDmgType||'Blunt'), '#fbbf24') : null}
+          {isArmorCat && item.bluntRes ? statRow('Blunt Res', item.bluntRes+'%', '#d4b483') : null}
+          {isArmorCat && item.cleavingRes ? statRow('Cleaving Res', item.cleavingRes+'%', '#e87040') : null}
+          {isArmorCat && item.piercingSlashingRes ? statRow('Piercing/Slashing Res', item.piercingSlashingRes+'%', '#c0c0c0') : null}
+          {item.defenseMod && parseInt(item.defenseMod) !== 0 ? statRow('Defense Bonus', '+'+item.defenseMod) : null}
+          {item.strReq && parseInt(item.strReq) > 0 ? statRow('Requires STR', item.strReq, '#f87171') : null}
+          {item.agiReq && parseInt(item.agiReq) > 0 ? statRow('Requires AGI', item.agiReq, '#34d399') : null}
+          {item.wilReq && parseInt(item.wilReq) > 0 ? statRow('Requires WIL', item.wilReq, '#a78bfa') : null}
+          {item.weight ? statRow('Weight', item.weight) : null}
+          {item.value  ? statRow('Value', String(item.value)+' shards', '#c9a227') : null}
+          {item.effect   ? statRow('Effect', item.effect, '#a78bfa') : null}
+          {item.gemBonus ? statRow('Gem Bonus', item.gemBonus, '#34d399') : null}
+          {item.foodEffect ? statRow('Food Effect', item.foodEffect, '#86efac') : null}
+          {item.traits && (
+            <div style={{marginTop:8,padding:'8px 10px',background:'#0f172a',borderRadius:6,border:'1px solid #2a2a4a'}}>
+              <div style={{fontSize:9,color:'#6b7280',letterSpacing:1.5,marginBottom:4}}>TRAITS</div>
+              <div style={{fontSize:11,color:'#a78bfa',lineHeight:1.6}}>{item.traits}</div>
+            </div>
+          )}
+          {item.description && (
+            <div style={{marginTop:8,fontSize:11,color:'#6b7280',fontStyle:'italic',lineHeight:1.5}}>{item.description}</div>
+          )}
+        </div>
+        <div style={{padding:'10px 16px',borderTop:'1px solid #2a2a4a',display:'flex',gap:8}}>
+          {mode==='inventory' && (
+            <button onClick={onEquip} style={{flex:1,background:'#14532d',color:'#86efac',
+              border:'1px solid #166534',borderRadius:6,padding:'9px',cursor:'pointer',
+              fontSize:13,fontWeight:600}}>Equip</button>
+          )}
+          {mode==='equipped' && (
+            <button onClick={onUnequip} style={{flex:1,background:'#7f1d1d',color:'#fca5a5',
+              border:'none',borderRadius:6,padding:'9px',cursor:'pointer',fontSize:13,fontWeight:600}}>Unequip</button>
+          )}
+          {mode==='inventory' && onTrade && (
+            <button onClick={onTrade} style={{background:'#1e3a5f',color:'#93c5fd',
+              border:'1px solid #3b82f633',borderRadius:6,padding:'9px 12px',cursor:'pointer',fontSize:13}}>Give</button>
+          )}
+          {mode==='inventory' && (
+            <button onClick={onRemove} style={{background:'#374151',color:'#9ca3af',
+              border:'none',borderRadius:6,padding:'9px 14px',cursor:'pointer',fontSize:13}}>Remove</button>
+          )}
+          <button onClick={onClose} style={{background:'#1f2937',color:'#6b7280',
+            border:'none',borderRadius:6,padding:'9px 14px',cursor:'pointer',fontSize:13}}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InvSlot({item, idx, onClear, onSetName, onSetWeight, onEquip, equipMsg, playerId}) {
+  const [popup, setPopup] = React.useState(false);
+  const [trade, setTrade] = React.useState(false);
+  const [removing, setRemoving] = React.useState(false);
+  const [removeQty, setRemoveQty] = React.useState(1);
+  const isEmpty = !item || (!item.id && !item.name);
+  const isDBItem = item && item.id;
+  const rc = isDBItem ? (RARITY_COLORS_INV[item.rarity]||'#9ca3af') : '#374151';
+  const stackSize = item && item.qty ? item.qty : 1;
+
+  function handleRemove() {
+    if (stackSize > 1) {
+      setRemoveQty(1);
+      setPopup(false);
+      setRemoving(true);
+    } else {
+      setPopup(false);
+      onClear(idx, 1);
+    }
+  }
+
+  if (isEmpty) {
+    return (
+      <div style={{background:'#0f172a',border:'1px dashed #2a2a4a',borderRadius:7,
+        padding:'6px 10px',display:'flex',alignItems:'center',minHeight:40}}>
+        <span style={{fontSize:10,color:'#374151'}}>{'Slot '+(idx+1)}</span>
+      </div>
+    );
+  }
+
+  if (isDBItem) {
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:3}}>
+        <div onClick={()=>setPopup(true)}
+          style={{background:'#16213e',border:'1px solid '+rc+'44',
+            borderRadius:7,padding:'6px 10px',display:'flex',gap:8,alignItems:'center',cursor:'pointer',
+            transition:'border-color 0.15s'}}>
+          <div style={{width:32,height:32,flexShrink:0,background:'#0d1117',border:'1px solid '+rc+'33',
+            borderRadius:5,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            {item.image
+              ? <img src={item.image} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>e.target.style.display='none'}/>
+              : <span style={{fontSize:14,opacity:0.3}}>?</span>}
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,color:rc,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.name}</div>
+            <div style={{display:'flex',gap:4,alignItems:'center'}}>
+              {item.weight && <div style={{fontSize:10,color:'#555'}}>{'\u2696 '+item.weight}</div>}
+              {stackSize > 1 && <div style={{fontSize:10,color:'#fbbf24',fontWeight:700}}>{'x'+stackSize}</div>}
+            </div>
+          </div>
+          <span style={{fontSize:10,color:'#4b5563',flexShrink:0}}>tap</span>
+        </div>
+        {equipMsg && <div style={{fontSize:10,color:'#f87171',padding:'2px 4px'}}>{equipMsg}</div>}
+        {popup && (
+          <ItemStatsPopup item={item} mode="inventory"
+            onClose={()=>setPopup(false)}
+            onEquip={()=>{setPopup(false); onEquip(idx);}}
+            onRemove={handleRemove}
+            onTrade={()=>{setPopup(false); setTrade(true);}}
+          />
+        )}
+        {trade && playerId && (
+          <TradeModal item={item} fromPlayerId={playerId} onClose={()=>setTrade(false)}/>
+        )}
+        {removing && (
+          <div onClick={e=>{if(e.target===e.currentTarget){setRemoving(false);}}}
+            style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',display:'flex',alignItems:'center',
+              justifyContent:'center',zIndex:700,padding:16}}>
+            <div style={{background:'#16213e',borderRadius:12,border:'1px solid #2a2a4a',width:'100%',maxWidth:300,overflow:'hidden'}}>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #2a2a4a',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{color:'#f87171',fontSize:13,letterSpacing:2,fontWeight:700}}>REMOVE ITEMS</span>
+                <button onClick={()=>setRemoving(false)} style={{background:'none',border:'none',color:'#6b7280',cursor:'pointer',fontSize:18,lineHeight:1}}>✕</button>
+              </div>
+              <div style={{padding:'16px 20px'}}>
+                <div style={{fontSize:12,color:rc,fontWeight:700,marginBottom:4}}>{item.name}</div>
+                <div style={{fontSize:11,color:'#6b7280',marginBottom:16}}>{'Stack: '+stackSize}</div>
+                <div style={{fontSize:11,color:'#6b7280',marginBottom:8,letterSpacing:1}}>QUANTITY</div>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16}}>
+                  <button onClick={()=>setRemoveQty(q=>Math.max(1,q-1))} style={{width:32,height:32,background:'#374151',color:'#f9fafb',border:'none',borderRadius:6,cursor:'pointer',fontSize:16,fontWeight:700}}>−</button>
+                  <div style={{flex:1,textAlign:'center',fontSize:18,color:'#f9fafb',fontWeight:700}}>{removeQty}</div>
+                  <button onClick={()=>setRemoveQty(q=>Math.min(stackSize,q+1))} style={{width:32,height:32,background:'#374151',color:'#f9fafb',border:'none',borderRadius:6,cursor:'pointer',fontSize:16,fontWeight:700}}>+</button>
+                  <button onClick={()=>setRemoveQty(stackSize)} style={{padding:'0 10px',height:32,background:'#1f2937',color:'#6b7280',border:'1px solid #374151',borderRadius:6,cursor:'pointer',fontSize:11}}>All</button>
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={()=>setRemoving(false)} style={{flex:1,background:'#1f2937',color:'#6b7280',border:'none',borderRadius:7,padding:'9px',cursor:'pointer',fontSize:13}}>Cancel</button>
+                  <button onClick={()=>{setRemoving(false); onClear(idx, removeQty);}} style={{flex:1,background:'#7f1d1d',color:'#fca5a5',border:'none',borderRadius:7,padding:'9px',cursor:'pointer',fontSize:13,fontWeight:600}}>
+                    {'Remove '+removeQty}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{display:'flex',gap:6,alignItems:'center'}}>
+      <input type="text" value={item.name||''} onChange={e=>onSetName(idx,e.target.value)}
+        placeholder={'Item '+(idx+1)} style={{...iBase,padding:'5px 8px',fontSize:12,flex:1}}/>
+      <input type="number" value={item.weight||''} onChange={e=>onSetWeight(idx,e.target.value)}
+        placeholder="0" style={{...iBase,padding:'5px 8px',fontSize:12,width:52,textAlign:'center'}}/>
+      <button onClick={()=>onClear(idx)}
+        style={{background:'#374151',color:'#9ca3af',border:'none',borderRadius:4,
+          padding:'4px 6px',cursor:'pointer',fontSize:10,flexShrink:0}}>X</button>
+    </div>
+  );
+}
+function EquippedSummary({ sheet, stats, allDamage, allDamageImmunities, allConditionImmunities, talentWeaponElem, talentDmgMults }) {
+  const ARMOR_SLOTS = ['head','body','hands','feet','back','belt','amulet','leftRing','rightRing'];
+  const mh = sheet.mainHand;
+  const oh = sheet.offHand;
+  const hasMH = mh && (mh.name || mh.type);
+  const hasOH = oh && (oh.name || oh.type);
+
+  // Collect all armor traits from all armor/accessory slots
+  const allArmorTraits = ARMOR_SLOTS
+    .map(k => sheet[k] && sheet[k].traits)
+    .filter(Boolean)
+    .join(', ');
+
+  // Total armor from stats (already computed)
+  // Physical resistances now live in stats.resistances
+
+  if (!hasMH && !hasOH && !allArmorTraits) return null;
+
+  const dmgLine = (min, max, elemental, physType) => {
+    const parts = [min+' - '+max+' '+(physType||'Blunt')];
+    if (elemental) {
+      Object.keys(elemental).forEach(t => {
+        if (elemental[t]) parts.push(elemental[t]+' '+t);
+      });
+    }
+    return parts.join(', ');
+  };
+
+  const sectionTitle = {fontSize:10,color:'#c9a227',letterSpacing:2,fontWeight:700,marginBottom:8};
+  const traitText = {fontSize:11,color:'#a78bfa',lineHeight:1.6,marginTop:4};
+  const dmgText   = {fontSize:13,color:'#fbbf24',fontWeight:700};
+  const armorText = {fontSize:13,color:'#93c5fd',fontWeight:700};
+  const nameText  = {fontSize:11,color:'#9ca3af',marginBottom:2};
+
+  return (
+    <div style={secStyle}>
+      <h2 style={secTitle}>EQUIPPED GEAR SUMMARY</h2>
+
+      {(hasMH || hasOH) && (
+        <div style={{marginBottom:hasMH&&hasOH?16:0}}>
+          <div style={sectionTitle}>WEAPONS</div>
+          {hasMH && (
+            <div style={{marginBottom:hasOH?12:0}}>
+              <div style={nameText}>Main Hand — {mh.name||mh.type}</div>
+              <div style={dmgText}>{dmgLine(stats.minDmg, stats.maxDmg, allDamage && allDamage.main, mh?.physDmgType||'Blunt')}</div>
+              {mh.traits && <div style={traitText}>{mh.traits}</div>}
+            </div>
+          )}
+          {hasOH && (
+            <div>
+              <div style={nameText}>Off Hand — {oh.name||oh.type}</div>
+              <div style={dmgText}>{dmgLine(stats.offMinDmg, stats.offMaxDmg, allDamage && allDamage.off, oh?.physDmgType||'Blunt')}</div>
+              {oh.traits && <div style={traitText}>{oh.traits}</div>}
+            </div>
+          )}
+          <div style={{marginTop:8,fontSize:12,color:'#34d399'}}>⚡ Attack Speed: <strong>{(stats.attackSpeed||2.00).toFixed(2)}s</strong></div>
+        </div>
+      )}
+
+      {(() => {
+        const ALL_RESIST_KEYS = ['Blunt','Cleaving','Piercing/Slashing','Acid','Arcane','Fire','Frost','Light','Lightning','Nature','Poison','Shadow'];
+        const RESIST_COLORS = {Blunt:'#d4b483',Cleaving:'#e87040','Piercing/Slashing':'#c0c0c0',Acid:'#aaff00',Arcane:'#bb44ff',Fire:'#ff7700',Frost:'#44aaff',Light:'#ffee44',Lightning:'#ffff55',Nature:'#44dd44',Poison:'#88cc00',Shadow:'#cc44ff'};
+        // Sum resistances from armor slots + allBonuses (which includes trait bonuses)
+        const totals = {};
+        ALL_RESIST_KEYS.forEach(k => {
+          const v = stats ? (stats.resistances||{})[k] : 0;
+          if(v) totals[k] = v;
+        });
+        const hasResists = Object.keys(totals).length > 0;
+        if(!hasResists && !allArmorTraits) return null;
+        return (
+          <div style={{borderTop:(hasMH||hasOH)?'1px solid #1a1a2e':'none',paddingTop:(hasMH||hasOH)?16:0}}>
+            <div style={sectionTitle}>ARMOR & ACCESSORIES</div>
+            {hasResists && (
+              <div style={{display:'flex',flexWrap:'wrap',gap:'4px 12px',marginBottom:allArmorTraits?8:0}}>
+                {ALL_RESIST_KEYS.filter(k=>totals[k]).map(k=>(
+                  <span key={k} style={{fontSize:11,color:RESIST_COLORS[k],fontWeight:600}}>{k} {totals[k]}%</span>
+                ))}
+              </div>
+            )}
+            {allArmorTraits && <div style={traitText}>{allArmorTraits}</div>}
+            {/* Talent-granted immunities */}
+            {(allDamageImmunities.length>0||allConditionImmunities.length>0) && (
+              <div style={{display:'flex',flexWrap:'wrap',gap:'4px 8px',marginTop:6}}>
+                {allDamageImmunities.map(t=>(
+                  <span key={t} style={{fontSize:10,color:'#4ade80',background:'#052e16',borderRadius:3,padding:'1px 6px'}}>Immune: {t} dmg</span>
+                ))}
+                {allConditionImmunities.map(c=>(
+                  <span key={c} style={{fontSize:10,color:'#9ca3af',background:'#1f2937',border:'1px solid #374151',borderRadius:3,padding:'1px 6px'}}>Immune: {c}</span>
+                ))}
+              </div>
+            )}
+            {/* Talent weapon elemental damage bonuses */}
+            {Object.keys(talentWeaponElem).length>0 && (
+              <div style={{marginTop:6}}>
+                <div style={{fontSize:9,color:'#555',letterSpacing:1,marginBottom:2}}>TALENT ELEMENTAL DAMAGE</div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:'4px 8px'}}>
+                  {Object.entries(talentWeaponElem).map(([type,amt])=>(
+                    <span key={type} style={{fontSize:11,color:'#f97316',fontWeight:600}}>+{amt} {type}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* Talent damage weakness/protection */}
+            {Object.keys(talentDmgMults).length>0 && (
+              <div style={{display:'flex',flexWrap:'wrap',gap:'4px 8px',marginTop:6}}>
+                {Object.entries(talentDmgMults).map(([type,mult])=>(
+                  mult>1
+                    ? <span key={type} style={{fontSize:10,color:'#fb923c',background:'#431407',borderRadius:3,padding:'1px 6px'}}>⚠ {type} ×{mult.toFixed(2)}</span>
+                    : <span key={type} style={{fontSize:10,color:'#4ade80',background:'#052e16',borderRadius:3,padding:'1px 6px'}}>🛡 {type} ×{mult.toFixed(2)}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+
+function getMaxStack(item){
+  if(!item||!item.category) return 1;
+  const cat=item.category, sub=item.subcategory||'';
+  if(cat==='Alchemy') return sub==='Potions'?5:sub==='Herbs'?10:1;
+  if(cat==='Blacksmithing') return 10;
+  if(cat==='Gems') return 5;
+  if(cat==='Scrolls') return 5;
+  if(cat==='Food') return 10;
+  if(cat==='Junk') return 10;
+  return 1;
+}
+function TradeModal({item, fromPlayerId, onClose}) {
+  const [msg, setMsg] = React.useState('');
+  const [msgColor, setMsgColor] = React.useState('#f87171');
+  const [done, setDone] = React.useState(false);
+  const [qty, setQty] = React.useState(1);
+  const stackSize = item.qty || 1;
+  const isStack = stackSize > 1;
+  const others = PLAYER_DEFS.filter(p => p.id !== fromPlayerId);
+  const rc = RARITY_COLORS_INV[item.rarity] || '#9ca3af';
+
+  function tradeTo(toPlayer) {
+    const amount = isStack ? qty : 1;
+    const max = getMaxStack(item);
+    // Add `amount` to recipient
+    try {
+      const raw = localStorage.getItem('cs_inventory_' + toPlayer.id);
+      let inv = raw ? JSON.parse(raw) : Array(20).fill(null);
+      let remaining = amount;
+      while (remaining > 0) {
+        const stackIdx = max > 1 ? inv.findIndex(s => s && s.id === item.id && (s.qty||1) < max) : -1;
+        if (stackIdx !== -1) {
+          const space = max - (inv[stackIdx].qty||1);
+          const add = Math.min(remaining, space);
+          inv[stackIdx] = {...inv[stackIdx], qty: (inv[stackIdx].qty||1) + add};
+          remaining -= add;
+        } else {
+          const freeIdx = inv.findIndex(s => !s || (!s.id && !s.name));
+          if (freeIdx === -1) { setMsgColor('#f87171'); setMsg(toPlayer.name + "'s inventory is full."); return; }
+          const add = Math.min(remaining, max);
+          inv[freeIdx] = max > 1 ? {...item, qty: add} : {...item};
+          remaining -= add;
+        }
+      }
+      localStorage.setItem('cs_inventory_' + toPlayer.id, JSON.stringify(inv));
+      window.dispatchEvent(new StorageEvent('storage', {key: 'cs_inventory_' + toPlayer.id}));
+    } catch { setMsgColor('#f87171'); setMsg('Failed to add to ' + toPlayer.name + "'s inventory."); return; }
+
+    // Remove `amount` from sender
+    try {
+      const raw = localStorage.getItem('cs_inventory_' + fromPlayerId);
+      if (raw) {
+        let inv = JSON.parse(raw);
+        const idx = inv.findIndex(s => s && s.id === item.id);
+        if (idx !== -1) {
+          const newQty = (inv[idx].qty||1) - amount;
+          inv[idx] = newQty > 0 ? {...inv[idx], qty: newQty} : {name:'', weight:''};
+          localStorage.setItem('cs_inventory_' + fromPlayerId, JSON.stringify(inv));
+          window.dispatchEvent(new StorageEvent('storage', {key: 'cs_inventory_' + fromPlayerId}));
+        }
+      }
+    } catch {}
+
+    setDone(true);
+    setMsgColor('#22c55e');
+    setMsg(item.name + (amount > 1 ? ' x'+amount : '') + ' sent to ' + toPlayer.name + '.');
+  }
+
+  return (
+    <div onClick={e=>{if(e.target===e.currentTarget)onClose();}}
+      style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',display:'flex',alignItems:'center',
+        justifyContent:'center',zIndex:700,padding:16}}>
+      <div style={{background:'#16213e',borderRadius:12,border:'1px solid #2a2a4a',width:'100%',maxWidth:340,overflow:'hidden'}}>
+        <div style={{padding:'14px 20px',borderBottom:'1px solid #2a2a4a',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{color:'#c9a227',fontSize:13,letterSpacing:2,fontWeight:700}}>GIVE ITEM</span>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'#6b7280',cursor:'pointer',fontSize:18,lineHeight:1}}>✕</button>
+        </div>
+        <div style={{padding:'16px 20px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16,padding:'10px 12px',background:'#0f172a',borderRadius:8,border:'1px solid #2a2a4a'}}>
+            <div style={{width:36,height:36,flexShrink:0,background:'#0d1117',border:'1px solid '+rc+'44',borderRadius:5,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center'}}>
+              {item.image ? <img src={item.image} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>e.target.style.display='none'}/> : <span style={{fontSize:16,opacity:0.3}}>?</span>}
+            </div>
+            <div>
+              <div style={{fontSize:13,color:rc,fontWeight:700}}>{item.name}{isStack?' (x'+stackSize+')':''}</div>
+              <div style={{fontSize:10,color:'#6b7280',fontStyle:'italic',marginTop:2,lineHeight:1.3}}>{item.description}</div>
+            </div>
+          </div>
+          {isStack && !done && (
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:11,color:'#6b7280',marginBottom:8,letterSpacing:1}}>QUANTITY</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <button onClick={()=>setQty(q=>Math.max(1,q-1))} style={{width:32,height:32,background:'#374151',color:'#f9fafb',border:'none',borderRadius:6,cursor:'pointer',fontSize:16,fontWeight:700}}>−</button>
+                <div style={{flex:1,textAlign:'center',fontSize:18,color:'#f9fafb',fontWeight:700}}>{qty}</div>
+                <button onClick={()=>setQty(q=>Math.min(stackSize,q+1))} style={{width:32,height:32,background:'#374151',color:'#f9fafb',border:'none',borderRadius:6,cursor:'pointer',fontSize:16,fontWeight:700}}>+</button>
+                <button onClick={()=>setQty(stackSize)} style={{padding:'0 10px',height:32,background:'#1f2937',color:'#6b7280',border:'1px solid #374151',borderRadius:6,cursor:'pointer',fontSize:11}}>All</button>
+              </div>
+            </div>
+          )}
+          {!done && (
+            <div>
+              <div style={{fontSize:11,color:'#6b7280',marginBottom:10,letterSpacing:1}}>GIVE TO</div>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {others.map(p => (
+                  <button key={p.id} onClick={()=>tradeTo(p)} style={{
+                    background:'#1e3a5f',border:'1px solid #3b82f6',color:p.color,
+                    borderRadius:7,padding:'10px 16px',cursor:'pointer',
+                    display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:13,fontWeight:600
+                  }}>
+                    <span>{p.name}</span>
+                    <span style={{fontSize:11,color:'#6b7280'}}>{'Give '+qty+' →'}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {msg && (
+            <div style={{marginTop:14,padding:'10px 12px',background:msgColor+'15',border:'1px solid '+msgColor+'44',borderRadius:7,fontSize:12,color:msgColor,lineHeight:1.5}}>
+              {msg}
+            </div>
+          )}
+          {done && <button onClick={onClose} style={{marginTop:14,width:'100%',background:'#14532d',color:'#86efac',border:'1px solid #166534',borderRadius:7,padding:'9px',cursor:'pointer',fontSize:13,fontWeight:600}}>Done</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InventoryBlock({inventory, setInvItem, clearInvSlot, totalWeight, weightAllowance, shards, onShardsChange, onEquip, equipMsgs, playerId}) {
+  return (
+    <div style={secStyle}>
+      <h2 style={secTitle}>INVENTORY</h2>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:16}}>
+        {inventory.map((item,idx) => (
+          <InvSlot key={idx} item={item} idx={idx}
+            onClear={clearInvSlot}
+            onSetName={(i,v)=>setInvItem(i,'name',v)}
+            onSetWeight={(i,v)=>setInvItem(i,'weight',v)}
+            onEquip={onEquip}
+            equipMsg={equipMsgs && equipMsgs[idx]}
+            playerId={playerId}
+          />
+        ))}
+      </div>
+      <div style={{borderTop:'1px solid #2a2a4a',paddingTop:14,display:'flex',gap:24,flexWrap:'wrap',alignItems:'flex-end'}}>
+        <div><div style={fLabel}>TOTAL WEIGHT</div><span style={{fontSize:18,color:'#fff'}}>{totalWeight.toFixed(1)}</span></div>
+        <div><div style={fLabel}>WEIGHT ALLOWANCE</div><span style={{fontSize:18,color:'#fff'}}>{weightAllowance.toFixed(1)}</span><span style={{fontSize:10,color:'#555',marginLeft:6}}>STR x 3.8</span></div>
+        <div><div style={fLabel}>ENCUMBRANCE PENALTY</div><span style={{fontSize:18,color:totalWeight>weightAllowance?'#ff6060':'#fff'}}>{totalWeight>weightAllowance?Math.floor(weightAllowance-totalWeight):0}</span></div>
+        <div style={{marginLeft:'auto'}}>
+          <div style={fLabel}>SHARDS</div>
+          <input type="number" value={shards} onChange={e=>onShardsChange(parseInt(e.target.value)||0)}
+            style={{...iBase,width:120,fontSize:18,fontWeight:700,color:'#fbbf24',padding:'6px 10px'}}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+// ─── CHARACTER SHEET VIEW ────────────────────────────────────────────────────
+function CharacterSheetView({ playerId, sheet, onUpdate, skillPoints, onSkillPointsChange, bonusPoints, onBonusPointsChange, activeClasses, onActiveClassesChange }) {
+  const [sheetTab, setSheetTab] = useState('character');
+  const set = (field, value) => onUpdate({[field]: value});
+  const {bio, baseStats, current, mainHand, offHand, head, body, hands, feet, back, belt, amulet, leftRing, rightRing, baseSkills, inventory, traitsText} = sheet;
+  const {allBonuses, allPctBonuses, allDamage, allMinMax, allDamageImmunities, allConditionImmunities} = computeBonuses(sheet);
+
+  // Apply skill tree bonuses — supports both hardcoded IDs and specialMechanic field from talent database
+  if (skillPoints) {
+    // Load talent trees from database to check specialMechanic
+    let dbTalentMap = {};
+    try {
+      const dbRaw = localStorage.getItem('cs_talentDatabase');
+      if(dbRaw) {
+        const trees = JSON.parse(dbRaw);
+        trees.forEach(tree => (tree.talents||[]).forEach(t => { dbTalentMap[t.id] = t; }));
+      }
+    } catch{}
+
+    // Fortitude — hardcoded ID or specialMechanic
+    const fortPts = skillPoints['fortitude']||0;
+    allBonuses["Health"] = (allBonuses["Health"]||0) + (fortPts*10);
+    // Also check db talents with Fortitude mechanic
+    Object.entries(skillPoints).forEach(([id, pts]) => {
+      if(pts <= 0) return;
+      const dbT = dbTalentMap[id];
+      if(dbT && dbT.specialMechanic && dbT.specialMechanic.includes('Fortitude')) {
+        allBonuses["Health"] = (allBonuses["Health"]||0) + (pts*10);
+      }
+      if(dbT && dbT.specialMechanic && dbT.specialMechanic.includes('Iron Skin')) {
+        ["Blunt Resistance","Cleaving Resistance","Piercing/Slashing Resistance"].forEach(k=>{
+          const base = allBonuses[k]||0;
+          allBonuses[k] = Math.round(base*(1+(pts*0.10)));
+        });
+      }
+    });
+
+    // Iron Skin — hardcoded ID
+    if ((skillPoints["iron_skin"]||0) > 0) {
+      ["Blunt Resistance","Cleaving Resistance","Piercing/Slashing Resistance"].forEach(k=>{
+        const base = allBonuses[k]||0;
+        allBonuses[k] = Math.round(base*(1+(skillPoints["iron_skin"]*0.10)));
+      });
+    }
+  }
+
+  // Talent database: stat bonuses, immunities, weaknesses, elemental damage
+  const talentImmuneConds = [];
+  const talentImmuneDmg   = [];
+  const talentDmgMults    = {};
+  const talentWeaponElem  = {};
+  if (skillPoints) {
+    loadDbTrees().forEach(tree => {
+      (tree.talents||[]).forEach(talent => {
+        const pts = (skillPoints[talent.id]||0);
+        if (pts <= 0) return;
+        (talent.statBonuses||[]).forEach(b => {
+          if (!b.amount || !b.stat) return;
+          const pct = parseFloat(b.amount) * (b.sign==='-' ? -1 : 1);
+          allPctBonuses[b.stat] = (allPctBonuses[b.stat]||0) + pct;
+        });
+        (talent.dmgMods||talent.weaponDamageBonuses||[]).forEach(b => {
+          const dmgT = b.dmgType||b.damageType;
+          if (!dmgT || !b.amount) return;
+          talentWeaponElem[dmgT] = (talentWeaponElem[dmgT]||0) + (parseInt(b.amount)||0);
+        });
+        (talent.immunities||[]).forEach(im => {
+          if (im.type==='Condition' && im.value && !talentImmuneConds.includes(im.value)) talentImmuneConds.push(im.value);
+          if (im.type==='Damage Type' && im.value && !talentImmuneDmg.includes(im.value)) talentImmuneDmg.push(im.value);
+        });
+        (talent.weaknessProtections||talent.weaknessProtection||[]).forEach(wp => {
+          const dmgT = wp.dmgType||wp.damageType;
+          const pctV = wp.pct||wp.percent;
+          if (!dmgT || !pctV) return;
+          const mult = wp.type==='Weakness' ? 1+parseFloat(pctV)/100 : 1-parseFloat(pctV)/100;
+          talentDmgMults[dmgT] = parseFloat(((talentDmgMults[dmgT]||1)*mult).toFixed(4));
+        });
+      });
+    });
+    talentImmuneConds.forEach(c => { if(!allConditionImmunities.includes(c)) allConditionImmunities.push(c); });
+    talentImmuneDmg.forEach(t => { if(!allDamageImmunities.includes(t)) allDamageImmunities.push(t); });
+  }
+
+  const sv = attr => {
+    const base = parseInt(baseStats[attr])||0;
+    const flat = allBonuses[attr]||0;
+    const pct  = allPctBonuses[attr]||0;
+    return base + flat + Math.round(base * pct / 100);
+  };
+  const derivedMax = {
+    Guard:  sv("Strength")*5   + allBonuses["Guard"],
+    Health: sv("Vitality")     + allBonuses["Health"],
+    Energy: sv("Willpower")*10 + allBonuses["Energy"],
+  };
+  const combatBase = {
+    "Attack Rating":      Math.floor((sv("Strength")+sv("Agility"))/2),
+    "Defense":            Math.floor((sv("Agility")+sv("Cunning"))/2),
+    "Magic Attack":       Math.floor((sv("Intelligence")+sv("Willpower"))/2),
+    "Critical Hit Chance":  Math.floor((sv("Cunning")/1000)*100),
+    "Critical Hit Damage":  Math.floor(((sv("Agility")/200)+1.4)*100),
+    "Spell Critical Chance":Math.floor((sv("Intelligence")/1000)*100),
+    "Spell Critical Damage":Math.floor(((sv("Willpower")/200)+1.4)*100),
+    "Flanking Damage":    Math.floor(((sv("Agility")/200)+1)*100),
+    "Guard Damage":       0,
+    "Armor Penetration":  0,
+  };
+  const attrModFor = t => t==="Ranged" ? sv("Agility") : sv("Strength");
+  const totalWeight = inventory.reduce((s,i) => s+(parseFloat(i ? i.weight : 0)||0)*(i ? (i.qty||1) : 1), 0);
+  const si = {...iBase, width:"100%", padding:"7px 8px", fontSize:14, boxSizing:"border-box"};
+  function setInvItem(i, field, val) { const next=inventory.slice(); next[i]={...next[i]||{},[field]:val}; set("inventory",next); }
+  function clearInvSlot(i, amount) {
+    const next=inventory.slice();
+    const item=next[i];
+    const n = amount || 1;
+    const newQty = (item && item.qty ? item.qty : 1) - n;
+    if(newQty > 0) {
+      next[i]={...item, qty: newQty};
+    } else {
+      next[i]={name:"",weight:""};
+    }
+    set("inventory",next);
+  }
+
+  const [equipMsgs,   setEquipMsgs]   = React.useState({});
+  const [unequipMsgs, setUnequipMsgs] = React.useState({});
+
+  function flashMsg(setFn, key, msg) {
+    setFn(prev => ({...prev, [key]: msg}));
+    setTimeout(() => setFn(prev => ({...prev, [key]: null})), 2500);
+  }
+
+  const [handPicker, setHandPicker] = React.useState(null); // {invIdx, item}
+
+  function checkAttrReq(item) {
+    if (item.strReq && parseInt(item.strReq) > 0 && sv("Strength") < parseInt(item.strReq))
+      return "Requires STR " + item.strReq + " (you have " + sv("Strength") + ")";
+    if (item.agiReq && parseInt(item.agiReq) > 0 && sv("Agility") < parseInt(item.agiReq))
+      return "Requires AGI " + item.agiReq + " (you have " + sv("Agility") + ")";
+    if (item.wilReq && parseInt(item.wilReq) > 0 && sv("Willpower") < parseInt(item.wilReq))
+      return "Requires WIL " + item.wilReq + " (you have " + sv("Willpower") + ")";
+    return null;
+  }
+
+  const [equipError, setEquipError] = React.useState(null);
+  function doEquipToSlot(invIdx, slotKey, itemOverride) {
+    try {
+    const item = itemOverride || inventory[invIdx];
+    // Block offHand if a two-handed weapon is in mainHand
+    if (slotKey === 'offHand' && sheet.mainHand && sheet.mainHand.twoHanded) {
+      flashMsg(setEquipMsgs, invIdx, 'Main hand weapon is two-handed.'); return;
+    }
+    // Block mainHand (two-handed) if offHand is occupied
+    if (slotKey === 'mainHand' && item.handedness === 'Two-Handed' && slotIsOccupied('offHand', sheet.offHand)) {
+      flashMsg(setEquipMsgs, invIdx, 'Off hand must be empty for two-handed weapons.'); return;
+    }
+    if (slotIsOccupied(slotKey, sheet[slotKey])) {
+      flashMsg(setEquipMsgs, invIdx, 'Slot is already occupied.'); return;
+    }
+    const slotData = dbItemToSlotData(item, slotKey);
+    const nextInv = inventory.slice();
+    nextInv[invIdx] = {name:"", weight:""};
+    set("inventory", nextInv);
+    set(slotKey, slotData);
+    } catch(e) { setEquipError(e.message || String(e)); }
+  }
+
+  function handleEquip(invIdx) {
+    let item = inventory[invIdx];
+    if (!item || !item.id) return;
+
+    // Merge with live database to pick up any fields added after item was stored
+    if (item.id) {
+      try {
+        const all = localStorage.getItem('cs_itemDatabase_all');
+        if (all) {
+          const parsed = JSON.parse(all);
+          const allItems = Array.isArray(parsed) ? parsed : (parsed.items || []);
+          const liveItem = allItems.find(function(i){ return i.id === item.id; });
+          if (liveItem) item = Object.assign({}, item, liveItem);
+        }
+      } catch(e) {}
+    }
+
+    const attrErr = checkAttrReq(item);
+    if (attrErr) { flashMsg(setEquipMsgs, invIdx, attrErr); return; }
+    const slotKey = getTargetSlotKey(item, sheet);
+    if (!slotKey) { flashMsg(setEquipMsgs, invIdx, 'No matching equipment slot.'); return; }
+    // Weapons: route by handedness
+    if (slotKey === '__weapon__') {
+      const h = item.handedness || 'Either';
+      if (h === 'Main Hand' || h === 'Two-Handed') {
+        doEquipToSlot(invIdx, 'mainHand', item);
+      } else if (h === 'Off Hand') {
+        doEquipToSlot(invIdx, 'offHand', item);
+      } else {
+        // Either — show hand picker
+        setHandPicker({invIdx, item});
+      }
+      return;
+    }
+    // Everything else (armor, jewelry, charms)
+    if (slotIsOccupied(slotKey, sheet[slotKey])) {
+      flashMsg(setEquipMsgs, invIdx, 'Slot is already occupied.'); return;
+    }
+    const slotData = dbItemToSlotData(item, slotKey);
+    const nextInv = inventory.slice();
+    nextInv[invIdx] = {name:"", weight:""};
+    set("inventory", nextInv);
+    set(slotKey, slotData);
+  }
+
+  function handleUnequip(slotKey) {
+    const data = sheet[slotKey];
+    if (!data || !data.id) return;
+    const freeIdx = inventory.findIndex(s => !s || (!s.id && !s.name));
+    if (freeIdx === -1) { flashMsg(setUnequipMsgs, slotKey, 'Inventory is full.'); return; }
+    // Get original DB item
+    const dbItem = data._dbItem || data;
+    const nextInv = inventory.slice();
+    nextInv[freeIdx] = dbItem;
+    set("inventory", nextInv);
+    // Clear the slot to its default
+    const isWeapon = slotKey === 'mainHand' || slotKey === 'offHand';
+    const isArmor  = ['head','body','hands','feet','back','belt'].includes(slotKey);
+    const isBelt   = slotKey === 'belt';
+    set(slotKey, isWeapon ? {...defHand} : isBelt ? {...defBelt} : isArmor ? {...defArmor} : {...defSimple});
+  }
+
+  // Shards
+  const shardsKey = 'cs_shards_'+playerId;
+  const [shards, setShards] = React.useState(() => { try { const v=localStorage.getItem(shardsKey); return v?parseInt(v):0; } catch { return 0; } });
+  function handleShardsChange(val) {
+    setShards(val);
+    try { localStorage.setItem(shardsKey, String(val)); } catch {}
+  }
+
+  // Sync inventory from cs_inventory_<playerId> (written by shops)
+  const syncInventoryFromStorage = React.useCallback(() => {
+    try {
+      const raw = localStorage.getItem('cs_inventory_'+playerId);
+      if (raw) {
+        const lsInv = JSON.parse(raw);
+        const merged = Array(20).fill(null).map((_, i) => lsInv[i] || {name:"",weight:""});
+        set("inventory", merged);
+      }
+    } catch {}
+  }, [playerId]);
+
+  React.useEffect(() => {
+    syncInventoryFromStorage();
+    const onStorage = (e) => {
+      if (e.key === 'cs_inventory_'+playerId) syncInventoryFromStorage();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [playerId]);
+
+  // Keep cs_inventory_<playerId> in sync when inventory changes
+  React.useEffect(() => {
+    try { localStorage.setItem('cs_inventory_'+playerId, JSON.stringify(inventory)); } catch {}
+  }, [inventory]);
+
+  const hasSkillTree = true;
+  const playerLevel = parseInt(baseStats["Cunning"]||0) > 0 ? Math.max(1, parseInt(bio.XPLevel||1)||1) : Math.max(1, parseInt(bio.XPLevel||1)||1);
+
+  const tabStyle = (tab) => ({
+    padding:'10px 20px', background:'transparent', border:'none',
+    borderBottom: sheetTab===tab ? '2px solid #c9a227' : '2px solid transparent',
+    color: sheetTab===tab ? '#f0c040' : '#666',
+    cursor:'pointer', fontSize:13, letterSpacing:1, textTransform:'uppercase',
+    fontFamily:'Georgia, serif',
+  });
+
+  function handleExportPlayer() {
+    const data = {
+      version: 1,
+      exported: new Date().toISOString(),
+      playerId,
+      sheet,
+      skillPoints: skillPoints || {},
+      bonusPoints: bonusPoints || 0,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'rmsw-' + playerId + '-' + new Date().toISOString().slice(0,10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportPlayer(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (!d.sheet || !d.playerId) { alert('Invalid character backup file.'); return; }
+        if (d.playerId !== playerId) {
+          if (!confirm('This file is for ' + d.playerId + ' but you are importing into ' + playerId + '. Continue anyway?')) return;
+        } else {
+          if (!confirm('Import ' + d.playerId + '\'s sheet? This will replace their current data.')) return;
+        }
+        onUpdate(d.sheet);
+        if (d.skillPoints && onSkillPointsChange) onSkillPointsChange(d.skillPoints);
+        if (d.bonusPoints !== undefined && onBonusPointsChange) onBonusPointsChange(d.bonusPoints);
+        alert('Imported ' + d.playerId + '\'s sheet successfully.');
+      } catch { alert('Invalid JSON file.'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  return (
+    <div style={{background:"#1a1a2e", fontFamily:"monospace", color:"#eee"}}>
+      {/* Tab bar */}
+      <div style={{display:'flex', background:'#0d0b08', borderBottom:'1px solid #3a3020', padding:'0 24px', alignItems:'center', justifyContent:'space-between'}}>
+        <div style={{display:'flex'}}>
+          <button style={tabStyle('character')} onClick={() => setSheetTab('character')}>Character</button>
+          {hasSkillTree && <button style={tabStyle('skill_trees')} onClick={() => setSheetTab('skill_trees')}>Talents</button>}
+        </div>
+        <div style={{display:'flex', gap:6, paddingRight:8}}>
+          <button onClick={handleExportPlayer} style={{background:'#166534',border:'1px solid #15803d',color:'#4ade80',
+            borderRadius:5,padding:'4px 10px',cursor:'pointer',fontSize:10,letterSpacing:1}}>
+            ⬇ Export
+          </button>
+          <label style={{background:'#1e3a5f',border:'1px solid #1d4ed8',color:'#93c5fd',
+            borderRadius:5,padding:'4px 10px',cursor:'pointer',fontSize:10,letterSpacing:1}}>
+            ⬆ Import
+            <input type="file" accept=".json" onChange={handleImportPlayer} style={{display:'none'}}/>
+          </label>
+        </div>
+      </div>
+
+      {/* Equip error display */}
+      {equipError && <div style={{background:'#7f1d1d',color:'#fca5a5',padding:'10px 16px',fontSize:12,fontFamily:'monospace',cursor:'pointer'}} onClick={()=>setEquipError(null)}>⚠ Equip error (tap to dismiss): {equipError}</div>}
+
+      {/* Character tab */}
+      {sheetTab === 'character' && (
+        <div style={{padding:"24px"}}>
+          {/* BIO */}
+          <div style={secStyle}>
+            <h2 style={secTitle}>CHARACTER</h2>
+            <div style={{display:"flex",gap:24}}>
+              {[
+                [["Name","Name"],["Race","Race"],["Class","Class"],["XPLevel","XP Level"],["XP","XP"]],
+                [["Alignment","Alignment"],["Age","Age"],["Height","Height"],["Weight","Weight"],["HairEyesSkin","Hair / Eyes / Skin"]]
+              ].map((col,ci)=>(
+                <div key={ci} style={{flex:1,display:"flex",flexDirection:"column",gap:10}}>
+                  {col.map(([f,label])=>(
+                    <div key={f}>
+                      <div style={fLabel}>{label.toUpperCase()}</div>
+                      <input type="text" value={bio[f]} onChange={e=>set("bio",{...bio,[f]:e.target.value})} placeholder={label} style={si}/>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ATTRIBUTES */}
+          <div style={secStyle}>
+            <h2 style={secTitle}>ATTRIBUTES</h2>
+            <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+              {ATTRS.map(attr=>(
+                <div key={attr} style={{flex:"1 1 90px"}}>
+                  <div style={fLabel}>{attr.toUpperCase()}</div>
+                  <input type="number" value={baseStats[attr]} onChange={e=>set("baseStats",{...baseStats,[attr]:e.target.value})} placeholder="0"
+                    style={{...iBase,width:"100%",padding:"8px 6px",fontSize:20,boxSizing:"border-box"}}/>
+                  {!!allBonuses[attr]&&<div style={{marginTop:5}}><StatValue value={sv(attr)} bonus={allBonuses[attr]}/></div>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* DERIVED STATS */}
+          <div style={secStyle}>
+            <h2 style={secTitle}>DERIVED STATS</h2>
+            <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
+              {["Guard","Health","Energy"].map(d=>{
+                const curVal = current[d]!=="" ? current[d] : derivedMax[d];
+                return (
+                  <div key={d} style={{flex:"1 1 140px"}}>
+                    <div style={fLabel}>{d.toUpperCase()}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      <input type="number" value={curVal}
+                        onChange={e=>onUpdate({current:{...current,[d]:e.target.value===""?"":parseInt(e.target.value)||0}})}
+                        style={{width:64,fontSize:20,background:"transparent",border:"none",borderBottom:"1px solid #444",color:allBonuses[d]?"#00ff88":"#fff",fontWeight:allBonuses[d]?"bold":"normal",textAlign:"right",padding:0,outline:"none"}}/>
+                      <span style={{color:"#444",fontSize:20,margin:"0 2px"}}>/</span>
+                      <span style={{fontSize:20,color:allBonuses[d]?"#00ff88":"#fff",fontWeight:allBonuses[d]?"bold":"normal"}}>{derivedMax[d]}</span>
+                    </div>
+                    <div style={{fontSize:10,color:"#444",marginTop:4}}>
+                      {d==="Health"&&"Vitality"}{d==="Guard"&&"Strength × 5"}{d==="Energy"&&"Willpower × 10"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* COMBAT STATS + RESISTANCES */}
+          <div style={secStyle}>
+            <div style={{display:"flex",gap:32}}>
+              <div style={{flex:2}}>
+                <h2 style={secTitle}>COMBAT STATS</h2>
+                <div style={{display:"flex",gap:24}}>
+                  {[COMBAT_STATS.slice(0,5),COMBAT_STATS.slice(5)].map((col,ci)=>(
+                    <div key={ci} style={{flex:1,display:"flex",flexDirection:"column",gap:14}}>
+                      {col.map(key=>(
+                        <div key={key}>
+                          <div style={fLabel}>{key.toUpperCase()}</div>
+                          <StatValue value={combatBase[key]+(allBonuses[key]||0)} bonus={allBonuses[key]} suffix={pctStats[key]?"%":""}/>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{width:1,background:"#2a2a4a",alignSelf:"stretch"}}/>
+              <div style={{flex:1}}>
+                <h2 style={secTitle}>RESISTANCES</h2>
+                <div style={{display:"flex",gap:24}}>
+                  {[RESIST_LEFT,RESIST_RIGHT].map((col,ci)=>(
+                    <div key={ci} style={{flex:1,display:"flex",flexDirection:"column",gap:14}}>
+                      {col.map(key=>{
+                        const val=allBonuses[key]||0;
+                        return (
+                          <div key={key}>
+                            <div style={fLabel}>{key.replace(" Resistance","").toUpperCase()}</div>
+                            <div style={{fontSize:15,color:val>0?'#4ade80':val<0?'#f87171':'#9ca3af',fontWeight:700}}>{val}%</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* EQUIPMENT */}
+          <div style={secStyle}>
+            <h2 style={secTitle}>EQUIPMENT</h2>
+            <EquipmentGrid
+              sheet={sheet}
+              onUpdate={onUpdate}
+              allDamage={allDamage}
+              allMinMax={allMinMax}
+              sv={sv}
+              onUnequip={handleUnequip}
+              unequipMsgs={unequipMsgs}
+            />
+          </div>
+
+          {/* EQUIPPED GEAR SUMMARY */}
+          <EquippedSummary sheet={sheet} stats={deriveStats(sheet)} allDamage={allDamage} allDamageImmunities={allDamageImmunities||[]} allConditionImmunities={allConditionImmunities||[]} talentWeaponElem={talentWeaponElem||{}} talentDmgMults={talentDmgMults||{}}/>
+
+          {/* HAND PICKER */}
+          {handPicker && (
+            <div onClick={function(e){if(e.target===e.currentTarget)setHandPicker(null);}}
+              style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:800,padding:16}}>
+              <div style={{background:'#16213e',borderRadius:12,border:'1px solid #2a2a4a',width:280,overflow:'hidden'}}>
+                <div style={{padding:'12px 16px',borderBottom:'1px solid #2a2a4a',background:'#0f172a'}}>
+                  <div style={{fontSize:12,color:'#c9a227',fontWeight:700,letterSpacing:1}}>WHICH HAND?</div>
+                  <div style={{fontSize:11,color:'#9ca3af',marginTop:2}}>{handPicker.item.name}</div>
+                </div>
+                <div style={{padding:16,display:'flex',flexDirection:'column',gap:8}}>
+                  <button onClick={function(){var it=handPicker.item,idx=handPicker.invIdx;setHandPicker(null);doEquipToSlot(idx,'mainHand',it);}}
+                    style={{background:'#1e3a5f',color:'#93c5fd',border:'1px solid #1d4ed8',borderRadius:6,padding:'10px',cursor:'pointer',fontSize:13,fontWeight:600}}>
+                    Main Hand
+                  </button>
+                  <button onClick={function(){var it=handPicker.item,idx=handPicker.invIdx;setHandPicker(null);doEquipToSlot(idx,'offHand',it);}}
+                    style={{background:'#1e3a5f',color:'#93c5fd',border:'1px solid #1d4ed8',borderRadius:6,padding:'10px',cursor:'pointer',fontSize:13,fontWeight:600}}>
+                    Off Hand
+                  </button>
+                  <button onClick={function(){setHandPicker(null);}}
+                    style={{background:'#1f2937',color:'#6b7280',border:'none',borderRadius:6,padding:'8px',cursor:'pointer',fontSize:12}}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* INVENTORY */}
+          <InventoryBlock inventory={inventory} setInvItem={setInvItem} clearInvSlot={clearInvSlot} totalWeight={totalWeight} weightAllowance={sv("Strength")*3.8} shards={shards} onShardsChange={handleShardsChange} onEquip={handleEquip} equipMsgs={equipMsgs} playerId={playerId}/>
+
+          {/* SKILLS */}
+          <div style={secStyle}>
+            <h2 style={secTitle}>SKILLS</h2>
+            <div style={{display:"flex",gap:24}}>
+              {[SKILLS_LEFT,SKILLS_RIGHT].map((col,ci)=>(
+                <div key={ci} style={{flex:1,display:"flex",flexDirection:"column",gap:12}}>
+                  {col.map(skill=>{
+                    const bonus=allBonuses[skill]||0;
+                    const total=(parseInt(baseSkills[skill])||0)+bonus;
+                    return (
+                      <div key={skill} style={{display:"flex",alignItems:"center",gap:10}}>
+                        <div style={{width:110,fontSize:11,color:"#555",letterSpacing:1,flexShrink:0}}>{skill.toUpperCase()}</div>
+                        <input type="number" value={baseSkills[skill]} onChange={e=>set("baseSkills",{...baseSkills,[skill]:e.target.value})} placeholder="0"
+                          style={{...iBase,width:70,padding:"6px 8px",fontSize:16,textAlign:"center"}}/>
+                        {!!bonus&&<span style={{fontSize:16,color:"#00ff88",fontWeight:"bold"}}>{total}<span style={{fontSize:10,color:"#00cc66",marginLeft:5}}>(+{bonus})</span></span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* TRAITS & ABILITIES */}
+          <div style={secStyle}>
+            <h2 style={secTitle}>TRAITS AND ABILITIES</h2>
+            <textarea value={traitsText||""} onChange={e=>set("traitsText",e.target.value)}
+              placeholder="Enter traits and abilities..."
+              style={{...iBase,width:"100%",minHeight:160,padding:"10px",fontSize:14,boxSizing:"border-box",resize:"vertical",lineHeight:1.6}}/>
+          </div>
+        </div>
+      )}
+
+      {/* Skill Trees tab */}
+      {sheetTab === 'skill_trees' && hasSkillTree && (
+        <SkillTreePanel
+          playerId={playerId}
+          skillPoints={skillPoints}
+          onSkillPointsChange={onSkillPointsChange}
+          playerLevel={playerLevel}
+          bonusPoints={bonusPoints}
+          onBonusPointsChange={onBonusPointsChange}
+          activeClasses={activeClasses}
+          onActiveClassesChange={onActiveClassesChange}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+function App() {
+  const lsGet = (key, def) => { try { const v=localStorage.getItem(key); return v!=null?JSON.parse(v):def; } catch { return def; } };
+  const lsSet = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
+
+  // Same localStorage keys as the combat simulator — they share data
+  const [sheets, setSheets] = useState(() => {
+    const saved = lsGet('cs_sheets', null);
+    const base = { adam: createSheetState(), brian: createSheetState(), craig: createSheetState() };
+    if (!saved) return base;
+    // Merge saved into base to ensure any new fields have defaults
+    return {
+      adam:  { ...base.adam,  ...saved.adam  },
+      brian: { ...base.brian, ...saved.brian },
+      craig: { ...base.craig, ...saved.craig },
+    };
+  });
+
+  const [adamSkillPoints,  setAdamSkillPoints]  = useState(() => lsGet('cs_adamSkillPoints', {}));
+  const [adamBonusPoints,  setAdamBonusPoints]  = useState(() => lsGet('cs_adamBonusPoints', 0));
+  const [craigSkillPoints, setCraigSkillPoints] = useState(() => lsGet('cs_craigSkillPoints', {}));
+  const [craigBonusPoints, setCraigBonusPoints] = useState(() => lsGet('cs_craigBonusPoints', 0));
+  const [brianSkillPoints, setBrianSkillPoints] = useState(() => lsGet('cs_brianSkillPoints', {}));
+  const [brianBonusPoints, setBrianBonusPoints] = useState(() => lsGet('cs_brianBonusPoints', 0));
+
+  const [adamActiveClasses,  setAdamActiveClasses]  = useState(() => lsGet('cs_adamActiveClasses', []));
+  const [craigActiveClasses, setCraigActiveClasses] = useState(() => lsGet('cs_craigActiveClasses', []));
+  const [brianActiveClasses, setBrianActiveClasses] = useState(() => lsGet('cs_brianActiveClasses', []));
+
+  const [activePlayer, setActivePlayer] = useState('adam');
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  // Auto-save to localStorage — same keys used by combat simulator
+  useEffect(() => { lsSet('cs_sheets', sheets); }, [sheets]);
+  useEffect(() => { lsSet('cs_adamSkillPoints',  adamSkillPoints);  }, [adamSkillPoints]);
+  useEffect(() => { lsSet('cs_adamBonusPoints',  adamBonusPoints);  }, [adamBonusPoints]);
+  useEffect(() => { lsSet('cs_craigSkillPoints', craigSkillPoints); }, [craigSkillPoints]);
+  useEffect(() => { lsSet('cs_craigBonusPoints', craigBonusPoints); }, [craigBonusPoints]);
+  useEffect(() => { lsSet('cs_brianSkillPoints', brianSkillPoints); }, [brianSkillPoints]);
+  useEffect(() => { lsSet('cs_brianBonusPoints', brianBonusPoints); }, [brianBonusPoints]);
+  useEffect(() => { lsSet('cs_adamActiveClasses',  adamActiveClasses);  }, [adamActiveClasses]);
+  useEffect(() => { lsSet('cs_craigActiveClasses', craigActiveClasses); }, [craigActiveClasses]);
+  useEffect(() => { lsSet('cs_brianActiveClasses', brianActiveClasses); }, [brianActiveClasses]);
+
+  // Flash "Saved" indicator on any change
+  const flashTimer = useRef(null);
+  useEffect(() => {
+    setSavedFlash(true);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setSavedFlash(false), 1500);
+  }, [sheets, adamSkillPoints, adamBonusPoints, craigSkillPoints, craigBonusPoints, brianSkillPoints, brianBonusPoints]);
+
+  const updateSheet = (pid, patch) => setSheets(prev => ({...prev, [pid]: {...prev[pid], ...patch}}));
+
+  const skillPointsFor    = id => id==='adam' ? adamSkillPoints  : id==='craig' ? craigSkillPoints  : brianSkillPoints;
+  const setSkillPointsFor  = id => id==='adam' ? setAdamSkillPoints : id==='craig' ? setCraigSkillPoints : setBrianSkillPoints;
+  const bonusPointsFor    = id => id==='adam' ? adamBonusPoints  : id==='craig' ? craigBonusPoints  : brianBonusPoints;
+  const setBonusPointsFor  = id => id==='adam' ? setAdamBonusPoints : id==='craig' ? setCraigBonusPoints : setBrianBonusPoints;
+  const activeClassesFor    = id => id==='adam' ? adamActiveClasses  : id==='craig' ? craigActiveClasses  : brianActiveClasses;
+  const setActiveClassesFor = id => id==='adam' ? setAdamActiveClasses : id==='craig' ? setCraigActiveClasses : setBrianActiveClasses;
+
+  const playerColor = PLAYER_DEFS.find(p => p.id === activePlayer)?.color || '#f9fafb';
+
+  function handleExport() {
+    const data = {
+      version: 1,
+      exported: new Date().toISOString(),
+      sheets,
+      adamSkillPoints, adamBonusPoints,
+      craigSkillPoints, craigBonusPoints,
+      brianSkillPoints, brianBonusPoints,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'rmsw-sheets-' + new Date().toISOString().slice(0,10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImport(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (!d.sheets) { alert('Invalid character sheet backup file.'); return; }
+        if (!confirm('Import character sheets? This will REPLACE all current sheet data.')) return;
+        setSheets(d.sheets);
+        if (d.adamSkillPoints)  setAdamSkillPoints(d.adamSkillPoints);
+        if (d.adamBonusPoints !== undefined) setAdamBonusPoints(d.adamBonusPoints);
+        if (d.brianSkillPoints) setBrianSkillPoints(d.brianSkillPoints);
+        if (d.brianBonusPoints !== undefined) setBrianBonusPoints(d.brianBonusPoints);
+        if (d.craigSkillPoints) setCraigSkillPoints(d.craigSkillPoints);
+        if (d.craigBonusPoints !== undefined) setCraigBonusPoints(d.craigBonusPoints);
+        alert('Character sheets imported successfully.');
+      } catch { alert('Invalid JSON file.'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  return (
+    <div style={{minHeight:'100vh', background:'#111827'}}>
+      {/* Header */}
+      <div style={{background:'#0f172a', borderBottom:'1px solid #1e293b', padding:'0 24px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+        <div style={{display:'flex', gap:0}}>
+          {PLAYER_DEFS.map((p, i) => {
+            const isActive = activePlayer === p.id;
+            return (
+              <button key={p.id} onClick={() => setActivePlayer(p.id)} style={{
+                padding:'14px 28px',
+                background: isActive ? '#1a1a2e' : 'transparent',
+                border:'none',
+                borderBottom: isActive ? `3px solid ${p.color}` : '3px solid transparent',
+                color: isActive ? p.color : '#4b5563',
+                cursor:'pointer', fontSize:15, fontWeight: isActive ? 'bold' : 'normal',
+                letterSpacing:2, textTransform:'uppercase', fontFamily:'monospace',
+                transition:'color 0.15s',
+              }}>
+                {p.name}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{display:'flex', alignItems:'center', gap:10}}>
+          <div style={{fontSize:11, color: savedFlash ? '#4ade80' : '#1f2937', transition:'color 0.3s', letterSpacing:1}}>
+            ✓ SAVED
+          </div>
+          <button onClick={handleExport} style={{background:'#166534',border:'1px solid #15803d',color:'#4ade80',
+            borderRadius:5,padding:'5px 10px',cursor:'pointer',fontSize:11}}>
+            ⬇ Export
+          </button>
+          <label style={{background:'#1e3a5f',border:'1px solid #1d4ed8',color:'#93c5fd',
+            borderRadius:5,padding:'5px 10px',cursor:'pointer',fontSize:11}}>
+            ⬆ Import
+            <input type="file" accept=".json" onChange={handleImport} style={{display:'none'}}/>
+          </label>
+          <div style={{fontSize:11, color:'#374151', letterSpacing:1}}>CHARACTER SHEET</div>
+        </div>
+      </div>
+
+      {/* Active player sheet */}
+      {PLAYER_DEFS.map(p => activePlayer === p.id && (
+        <CharacterSheetView
+          key={p.id}
+          playerId={p.id}
+          sheet={sheets[p.id]}
+          onUpdate={patch => updateSheet(p.id, patch)}
+          skillPoints={skillPointsFor(p.id)}
+          onSkillPointsChange={setSkillPointsFor(p.id)}
+          bonusPoints={bonusPointsFor(p.id)}
+          onBonusPointsChange={setBonusPointsFor(p.id)}
+          activeClasses={activeClassesFor(p.id)}
+          onActiveClassesChange={setActiveClassesFor(p.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = {error: null}; }
+  static getDerivedStateFromError(e) { return {error: e.message || String(e)}; }
+  render() {
+    if (this.state.error) {
+      return React.createElement('div', {
+        style: {background:'#7f1d1d',color:'#fca5a5',padding:20,fontFamily:'monospace',fontSize:13,whiteSpace:'pre-wrap'}
+      }, 'RENDER ERROR (screenshot this):\n' + this.state.error);
+    }
+    return this.props.children;
+  }
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  React.createElement(ErrorBoundary, null, React.createElement(App))
+);
+  </script>
+</body>
+</html>
