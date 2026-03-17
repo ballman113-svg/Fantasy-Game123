@@ -2896,12 +2896,19 @@ function App() {
         if (!force && _fbCombatPending.current[key]) return; // skip our own echo
         const raw = snap.val();
         if (raw == null && !allowNull) return;
-        apply(raw == null ? null : fbRestore(raw));
+        apply(raw);
       });
       refs.push(ref);
     };
     listen('phase',        d => { if (d != null) setPhase(d); });
-    listen('combatants',   d => { if (d != null) { const restored = fbRestore(d); setCombatants(restored); combatantsRef.current = restored; } }, false, true);
+    listen('combatants', d => {
+      if (d == null) return;
+      try {
+        const arr = typeof d === 'string' ? JSON.parse(d) : d;
+        setCombatants(arr);
+        combatantsRef.current = arr;
+      } catch(e) { console.warn('combatants parse error', e); }
+    }, false, true);
     listen('order',        d => { if (d != null) setOrder(d); });
     listen('activeTurnId', d => { setActiveTurnId_(d); }, true);
     listen('turnQueue',    d => { if (d != null) setTurnQueue_(d); });
@@ -2925,7 +2932,16 @@ function App() {
 
   // Write combat state to Firebase on change
   useEffect(() => { fbCombatWrite('phase',        phase,        0);   }, [phase]);
-  useEffect(() => { fbCombatWrite('combatants',   combatants,   300); }, [combatants]);
+  useEffect(() => {
+    if (!window._fbDb) return;
+    clearTimeout(_fbCombatTimers.current['combatants']);
+    _fbCombatTimers.current['combatants'] = setTimeout(() => {
+      _fbCombatPending.current['combatants'] = true;
+      window._fbDb.ref('/combat/combatants').set(JSON.stringify(combatants))
+        .then(() => { setTimeout(() => { _fbCombatPending.current['combatants'] = false; }, 300); })
+        .catch(e => { _fbCombatPending.current['combatants'] = false; console.warn('FB combatants write', e); });
+    }, 300);
+  }, [combatants]);
   useEffect(() => { fbCombatWrite('order',        order,        300); }, [order]);
   useEffect(() => { fbCombatWrite('activeTurnId', activeTurnId, 0);   }, [activeTurnId]);
   useEffect(() => { fbCombatWrite('turnQueue',    turnQueue,    300); }, [turnQueue]);
