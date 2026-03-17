@@ -2912,6 +2912,17 @@ function App() {
     return () => refs.forEach(r => r.off());
   }, []);
 
+  // Debug: show Firebase sync status visibly
+  const [fbDebug, setFbDebug] = React.useState('FB: init...');
+  useEffect(() => {
+    setTimeout(() => {
+      setFbDebug(window._fbDb ? 'FB: connected' : 'FB: FAILED');
+    }, 2000);
+  }, []);
+  useEffect(() => {
+    if (phase === 'combat' || phase === 'combat_setup') setFbDebug('FB: phase=' + phase + ' c=' + combatants.length);
+  }, [phase, combatants]);
+
   // Write combat state to Firebase on change
   useEffect(() => { fbCombatWrite('phase',        phase,        0);   }, [phase]);
   useEffect(() => { fbCombatWrite('combatants',   combatants,   300); }, [combatants]);
@@ -6022,6 +6033,7 @@ addLog(`✦ ${atk.name}'s weapon procs ${proc.condition} on ${target.name} for $
   return (
     <div style={{background:'#111827',color:'#f9fafb',minHeight:'100vh',fontFamily:'system-ui,sans-serif'}}>
       <style>{`@keyframes floatUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-48px)}} @keyframes hitShake{0%{transform:translateX(0);background:#1f2937}15%{transform:translateX(-7px);background:#7f1d1d}35%{transform:translateX(7px);background:#7f1d1d}55%{transform:translateX(-4px);background:#7f1d1d}75%{transform:translateX(4px);background:#450a0a}100%{transform:translateX(0);background:#1f2937}}`}</style>
+      <div style={{position:'fixed',bottom:8,right:8,background:'#000',color:'#0f0',fontSize:10,padding:'2px 6px',borderRadius:4,zIndex:9999,opacity:0.8}}>{fbDebug}</div>
       <div style={{background:'#1f2937',padding:'10px 16px',display:'flex',alignItems:'center',gap:16,borderBottom:'1px solid #374151'}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <button onClick={()=>setRound(r=>Math.max(1,r-1))} style={btn({padding:'4px 10px'})}>◀</button>
