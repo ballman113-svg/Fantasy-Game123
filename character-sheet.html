@@ -2546,15 +2546,15 @@ function App() {
   const _fbSyncing = useRef(false);
   const _fbTimers  = useRef({});
 
-  function fbListen(path, apply) {
+  function fbListen(path, apply, allowNull) {
     if (!window._fbDb) return () => {};
     const ref = window._fbDb.ref(path);
     ref.on('value', snap => {
       if (_fbSyncing.current) return;
       const d = snap.val();
-      if (d == null) return;
+      if (d == null && !allowNull) return;
       _fbSyncing.current = true;
-      apply(d);
+      apply(d == null ? {} : d);
       setTimeout(() => { _fbSyncing.current = false; }, 800);
     });
     return () => ref.off();
@@ -2573,15 +2573,15 @@ function App() {
     brian: { ...prev.brian, ...(d.brian || {}) },
     craig: { ...prev.craig, ...(d.craig || {}) },
   }))), []);
-  useEffect(() => fbListen('/characterSheet/adamSkillPoints',  d => setAdamSkillPoints(d)),  []);
-  useEffect(() => fbListen('/characterSheet/adamBonusPoints',  d => setAdamBonusPoints(d)),  []);
-  useEffect(() => fbListen('/characterSheet/craigSkillPoints', d => setCraigSkillPoints(d)), []);
-  useEffect(() => fbListen('/characterSheet/craigBonusPoints', d => setCraigBonusPoints(d)), []);
-  useEffect(() => fbListen('/characterSheet/brianSkillPoints', d => setBrianSkillPoints(d)), []);
-  useEffect(() => fbListen('/characterSheet/brianBonusPoints', d => setBrianBonusPoints(d)), []);
-  useEffect(() => fbListen('/characterSheet/adamActiveClasses',  d => setAdamActiveClasses(d)),  []);
-  useEffect(() => fbListen('/characterSheet/craigActiveClasses', d => setCraigActiveClasses(d)), []);
-  useEffect(() => fbListen('/characterSheet/brianActiveClasses', d => setBrianActiveClasses(d)), []);
+  useEffect(() => fbListen('/characterSheet/adamSkillPoints',  d => setAdamSkillPoints(d), true),  []);
+  useEffect(() => fbListen('/characterSheet/adamBonusPoints',  d => setAdamBonusPoints(d), true),  []);
+  useEffect(() => fbListen('/characterSheet/craigSkillPoints', d => setCraigSkillPoints(d), true), []);
+  useEffect(() => fbListen('/characterSheet/craigBonusPoints', d => setCraigBonusPoints(d), true), []);
+  useEffect(() => fbListen('/characterSheet/brianSkillPoints', d => setBrianSkillPoints(d), true), []);
+  useEffect(() => fbListen('/characterSheet/brianBonusPoints', d => setBrianBonusPoints(d), true), []);
+  useEffect(() => fbListen('/characterSheet/adamActiveClasses',  d => setAdamActiveClasses(d), true),  []);
+  useEffect(() => fbListen('/characterSheet/craigActiveClasses', d => setCraigActiveClasses(d), true), []);
+  useEffect(() => fbListen('/characterSheet/brianActiveClasses', d => setBrianActiveClasses(d), true), []);
 
   useEffect(() => { fbWrite('sheets',            '/characterSheet/sheets',            sheets);            }, [sheets]);
   useEffect(() => { fbWrite('adamSP',            '/characterSheet/adamSkillPoints',   adamSkillPoints);   }, [adamSkillPoints]);
