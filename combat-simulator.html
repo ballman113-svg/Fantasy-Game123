@@ -2902,12 +2902,13 @@ function App() {
     };
     listen('phase',        d => { if (d != null) setPhase(d); });
     listen('combatants', d => {
-      if (d == null) return;
+      if (d == null) { setFbDebug('FB: combatants=null'); return; }
       try {
         const arr = typeof d === 'string' ? JSON.parse(d) : d;
+        setFbDebug('FB: got c=' + (Array.isArray(arr) ? arr.length : 'NOT_ARRAY:' + typeof arr));
         setCombatants(arr);
         combatantsRef.current = arr;
-      } catch(e) { console.warn('combatants parse error', e); }
+      } catch(e) { setFbDebug('FB: parse ERR ' + e.message); console.warn('combatants parse error', e); }
     }, false, true);
     listen('order',        d => { if (d != null) setOrder(d); });
     listen('activeTurnId', d => { setActiveTurnId_(d); }, true);
