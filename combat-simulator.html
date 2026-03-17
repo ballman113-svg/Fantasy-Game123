@@ -2835,10 +2835,10 @@ function App() {
   const [monsterStats,setMonsterStats]=useState({});
 
   // Load setup state from Firebase on mount (single source of truth)
+  const _setupTimer   = useRef(null);
+  const _setupSyncing = useRef(false);
   useEffect(()=>{
     if(!window._fbDb) return;
-    const refs = [];
-
     const r1 = window._fbDb.ref('/characterSheet');
     r1.on('value', snap=>{
       const d=snap.val(); if(!d) return;
@@ -2847,13 +2847,10 @@ function App() {
       if(d.craigSkillPoints) setCraigSkillPoints(d.craigSkillPoints);
       if(d.brianSkillPoints) setBrianSkillPoints(d.brianSkillPoints);
     });
-    refs.push(r1);
-
     const r2 = window._fbDb.ref('/setupState');
     r2.on('value', snap=>{
       if(_setupSyncing.current) return;
       const d=snap.val(); if(!d) return;
-      _setupSyncing.current = true;
       if(d.selectedEnvironment!=null) setSelectedEnvironment(d.selectedEnvironment);
       if(d.playerAbilities) setPlayerAbilities(d.playerAbilities);
       if(d.playerSpecialAttacks) setPlayerSpecialAttacks(d.playerSpecialAttacks);
@@ -2861,27 +2858,28 @@ function App() {
       if(d.startHp) setStartHp(d.startHp);
       if(d.startGuard) setStartGuard(d.startGuard);
       if(d.monsterStats) setMonsterStats(d.monsterStats);
-      setTimeout(()=>{ _setupSyncing.current = false; }, 500);
     });
-    refs.push(r2);
-
-    return () => refs.forEach(r => r.off());
+    window._fbDb.ref('/combat/phase').on('value', snap=>{
+      const d=snap.val(); if(d&&d!=='setup') setPhase(d);
+    });
+    return ()=>{ r1.off(); r2.off(); };
   },[]);
 
-  // Save setup state to Firebase (debounced)
-  const _setupTimer   = useRef(null);
-  const _setupSyncing = useRef(false);
   useEffect(()=>{
-    if(!window._fbDb || !_fbLoaded.current || _setupSyncing.current) return;
+    if(!window._fbDb) return;
     clearTimeout(_setupTimer.current);
     _setupTimer.current=setTimeout(()=>{
-      window._fbDb.ref('/setupState').set({selectedEnvironment,playerAbilities,playerSpecialAttacks,counts,startHp,startGuard,monsterStats}).catch(e=>console.warn('FB setup write',e));
-    },1000);
+      _setupSyncing.current = true;
+      window._fbDb.ref('/setupState').set({selectedEnvironment,playerAbilities,playerSpecialAttacks,counts,startHp,startGuard,monsterStats})
+        .then(()=>{ setTimeout(()=>{ _setupSyncing.current=false; },300); })
+        .catch(e=>{ _setupSyncing.current=false; console.warn('FB setup write',e); });
+    },400);
   },[selectedEnvironment,playerAbilities,playerSpecialAttacks,counts,startHp,startGuard,monsterStats]);
 
   // ── Firebase combat sync ──────────────────────────────────────────────────
   const _fbCombatTimers  = useRef({});
-  const _fbCombatPending = useRef({}); // per-key write-pending flag
+  const _fbCombatPending = useRef({});
+  const _fbLoaded        = useRef(false);
 
   function fbSanitize(val) {
     if (Array.isArray(val)) return val.map(fbSanitize);
@@ -2910,12 +2908,11 @@ function App() {
     return val;
   }
 
-  const _fbLoaded = useRef(false);
-
   function fbCombatWrite(key, value, debounce=300) {
-    if (!window._fbDb || !_fbLoaded.current) return;
+    if (!window._fbDb) return;
     clearTimeout(_fbCombatTimers.current[key]);
     _fbCombatTimers.current[key] = setTimeout(() => {
+      if (!_fbLoaded.current) return; // Firebase hasn't responded yet — skip
       _fbCombatPending.current[key] = true;
       window._fbDb.ref('/combat/' + key).set(fbSanitize(value))
         .then(() => { setTimeout(() => { _fbCombatPending.current[key] = false; }, 300); })
@@ -2947,7 +2944,7 @@ function App() {
         if (setCombatantsRef.current) setCombatantsRef.current(arr);
         combatantsRef.current = arr;
       } catch(e) { setFbDebug('FB: parse ERR ' + e.message); console.warn('combatants parse error', e); }
-    }, false, true);
+    }, true, true);
     listen('order',        d => { if (d != null) setOrder(d); });
     listen('activeTurnId', d => { setActiveTurnId_(d); }, true);
     listen('turnQueue',    d => { if (d != null) setTurnQueue_(d); });
@@ -2971,41 +2968,18 @@ function App() {
 
   // Write combat state to Firebase on change
   useEffect(() => { fbCombatWrite('phase',        phase,        0);   }, [phase]);
-  useEffect(() => {
-    if (!window._fbDb) return;
-    clearTimeout(_fbCombatTimers.current['combatants']);
-    _fbCombatTimers.current['combatants'] = setTimeout(() => {
-      _fbCombatPending.current['combatants'] = true;
-      const payload = JSON.stringify(combatants);
-      setFbDebug('FB: writing c=' + combatants.length + ' sz=' + Math.round(payload.length/1024) + 'kb');
-      window._fbDb.ref('/combat/combatants').set(payload)
-        .then(() => { 
-          setTimeout(() => { _fbCombatPending.current['combatants'] = false; }, 300);
-          setFbDebug('FB: wrote c=' + combatants.length + ' OK');
-        })
-        .catch(e => { 
-          _fbCombatPending.current['combatants'] = false; 
-          setFbDebug('FB: WRITE ERR ' + e.message);
-          console.warn('FB combatants write', e); 
-        });
-    }, 300);
-  }, [combatants]);
-  useEffect(() => { fbCombatWrite('order',        order,        300); }, [order]);
-  useEffect(() => { fbCombatWrite('activeTurnId', activeTurnId, 0);   }, [activeTurnId]);
-  useEffect(() => { fbCombatWrite('turnQueue',    turnQueue,    300); }, [turnQueue]);
-  useEffect(() => { fbCombatWrite('round',        round,        0);   }, [round]);
-  useEffect(() => { fbCombatWrite('log',          log,          300); }, [log]);
-  useEffect(() => { fbCombatWrite('step',         step,         0);   }, [step]);
-  useEffect(() => { fbCombatWrite('combatElapsed', combatElapsed, 500); }, [combatElapsed]);
+
   // ─────────────────────────────────────────────────────────────────────────
 
   // Single interval: runs only during combat, handles timer + turn activation + DoT ticks
+  // Only runs on the browser that started combat (_isOwner). Other browsers receive combatElapsed via Firebase.
   useEffect(()=>{
     if(phase!=='combat'){
       clearInterval(timerRef.current);
       if(phase==='setup'){ setCombatElapsed(0); combatElapsedRef.current=0; lastTickRef.current=-1; }
       return;
     }
+    if(!_isOwner.current) return;
     timerStartRef.current = Date.now() - combatElapsedRef.current * 1000;
     timerRef.current = setInterval(()=>{
       // If a turn is active, freeze the clock
@@ -3195,7 +3169,20 @@ function App() {
   const allCategories = [...new Set([...Object.keys(MONSTER_TEMPLATES), ...dbCreatures.map(c => c.category)])];
   const [combatants,setCombatants]=useState([]);
   const setCombatantsRef = useRef(null);
-  useEffect(() => { setCombatantsRef.current = setCombatants; }, [setCombatants]);
+  setCombatantsRef.current = setCombatants;
+  // Write combatants to Firebase whenever they change
+  useEffect(() => {
+    if (!window._fbDb || !_fbLoaded.current || combatants.length === 0) return;
+    clearTimeout(_fbCombatTimers.current['combatants']);
+    _fbCombatTimers.current['combatants'] = setTimeout(() => {
+      _fbCombatPending.current['combatants'] = true;
+      const payload = JSON.stringify(combatants);
+      setFbDebug('FB: writing c=' + combatants.length);
+      window._fbDb.ref('/combat/combatants').set(payload)
+        .then(() => { setTimeout(() => { _fbCombatPending.current['combatants'] = false; }, 300); setFbDebug('FB: wrote c=' + combatants.length + ' OK'); })
+        .catch(e => { _fbCombatPending.current['combatants'] = false; setFbDebug('FB: WRITE ERR ' + e.message); });
+    }, 300);
+  }, [combatants]);
   const [order,setOrder]=useState([]);
   const [activeTurnId,setActiveTurnId]=useState(null);
   const [turnQueue,setTurnQueue]=useState([]); // [{id, nextTurnTime, casting: null|{spellName,resolveTime}}]
@@ -3210,6 +3197,7 @@ function App() {
   const combatElapsedRef=useRef(0);
   const prevActiveTurnIdRef=useRef(null);
   const combatantsRef=useRef([]);
+  const _isOwner=useRef(false); // true only on the browser that started combat
   // Wrappers that update refs synchronously alongside state
   const setActiveTurnId_=(id)=>{ activeTurnIdRef.current=id; if(!id) prevActiveTurnIdRef.current=null; setActiveTurnId(id); };
   // Keep combatantsRef in sync so the timer interval can read current hp
@@ -3223,6 +3211,14 @@ function App() {
     }
   };
   const [step,setStep]=useState('action');
+  // ── Firebase write effects — declared here so all state vars are in scope ──
+  useEffect(() => { fbCombatWrite('order',        order,        300); }, [order]);
+  useEffect(() => { fbCombatWrite('activeTurnId', activeTurnId, 0);   }, [activeTurnId]);
+  useEffect(() => { fbCombatWrite('turnQueue',    turnQueue,    300); }, [turnQueue]);
+  useEffect(() => { fbCombatWrite('round',        round,        0);   }, [round]);
+  useEffect(() => { fbCombatWrite('log',          log,          300); }, [log]);
+  useEffect(() => { fbCombatWrite('step',         step,         0);   }, [step]);
+  useEffect(() => { fbCombatWrite('combatElapsed', combatElapsed, 500); }, [combatElapsed]);
   const [activeStances,setActiveStances]=useState(['front']);
   const [selectedTarget,setSelectedTarget]=useState(null);
   const [selectedTargets,setSelectedTargets]=useState([]); // for X Enemies / X Allies multi-pick
@@ -3875,6 +3871,7 @@ function App() {
     setCombatants(all);
     setOrder(all.map(c=>c.id));
     setPhase('combat_setup');
+    _isOwner.current = true;
   };
 
   const confirmAddCombatant=()=>{
