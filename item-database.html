@@ -1692,7 +1692,11 @@ function getInventory(player){
   catch{return Array(20).fill(null);}
 }
 function saveInventory(player,inv){
-  try{localStorage.setItem('cs_inventory_'+player.toLowerCase(),JSON.stringify(inv));}catch{}
+  var key=player.toLowerCase();
+  try{localStorage.setItem('cs_inventory_'+key,JSON.stringify(inv));}catch{}
+  if(window._fbDb){
+    window._fbDb.ref('/inventory/'+key).set(inv).catch(function(e){console.warn('FB inv write',e);});
+  }
 }
 function getMaxStack(item){
   if(!item||!item.category) return 1;
