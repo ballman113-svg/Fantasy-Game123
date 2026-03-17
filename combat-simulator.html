@@ -2869,7 +2869,7 @@ function App() {
   }
 
   function fbCombatWrite(key, value, debounce=300) {
-    if (!window._fbDb || _fbCombatSyncing.current) return;
+    if (!window._fbDb) return;
     clearTimeout(_fbCombatTimers.current[key]);
     _fbCombatTimers.current[key] = setTimeout(() => {
       window._fbDb.ref('/combat/' + key).set(fbSanitize(value)).catch(e => console.warn('FB combat write', key, e));
