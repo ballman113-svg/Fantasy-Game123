@@ -93,6 +93,8 @@
     text-align: right;
   }
 </style>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
 <div class="card">
@@ -121,17 +123,39 @@
 </div>
 
 <script>
+  // Firebase init
+  (function(){
+    try {
+      var cfg={apiKey:"AIzaSyDWPAf3783eIjEwYj-qbFSyiJSZ49E3oZg",authDomain:"the-boyz-rpg-game.firebaseapp.com",databaseURL:"https://the-boyz-rpg-game-default-rtdb.firebaseio.com",projectId:"the-boyz-rpg-game",storageBucket:"the-boyz-rpg-game.firebasestorage.app",messagingSenderId:"841803624391",appId:"1:841803624391:web:51d8e1912b6a79b08873e2"};
+      var app=(firebase.apps&&firebase.apps.length)?firebase.app():firebase.initializeApp(cfg);
+      window._fbDb=firebase.database(app);
+    } catch(e){ console.warn('Firebase unavailable',e); window._fbDb=null; }
+  })();
+
   let effectiveChance = null;
+  let _syncing = false;
+  let _inputTimer = null;
 
-  function updateChance() {
+  function applyState(data) {
+    _syncing = true;
+    if (data.check    != null) document.getElementById('check').value      = data.check;
+    if (data.diff     != null) document.getElementById('difficulty').value  = data.diff;
+    if (data.modifier != null) document.getElementById('modifier').value    = data.modifier;
+    computeChance(false);
+    if (data.roll != null) applyRollResult(data.roll, data.target, data.success);
+    _syncing = false;
+  }
+
+  function computeChance(clearResult) {
     const check = parseFloat(document.getElementById('check').value);
-    const diff = parseFloat(document.getElementById('difficulty').value);
-    const mod = parseFloat(document.getElementById('modifier').value) || 0;
+    const diff  = parseFloat(document.getElementById('difficulty').value);
+    const mod   = parseFloat(document.getElementById('modifier').value) || 0;
     const display = document.getElementById('chanceDisplay');
-    const label = document.getElementById('diffLabel');
-    document.getElementById('resultDisplay').textContent = '';
-    document.getElementById('rollDisplay').textContent = '';
-
+    const label   = document.getElementById('diffLabel');
+    if (clearResult) {
+      document.getElementById('resultDisplay').textContent = '';
+      document.getElementById('rollDisplay').textContent = '';
+    }
     if (isNaN(check) || isNaN(diff) || (check + diff) === 0) {
       display.textContent = '—';
       display.className = 'chance-display';
@@ -139,51 +163,78 @@
       effectiveChance = null;
       return;
     }
-
-    const base = (check / (check + diff)) * 100;
+    const base     = (check / (check + diff)) * 100;
     const adjusted = Math.min(100, Math.max(0, base + mod));
     effectiveChance = adjusted;
-
     const pct = Math.round(adjusted);
     display.textContent = pct + '%';
-
     if (pct >= 70) {
       display.className = 'chance-display green';
-      label.textContent = 'Easy';
-      label.className = 'difficulty-label green';
+      label.textContent = 'Easy'; label.className = 'difficulty-label green';
     } else if (pct >= 40) {
       display.className = 'chance-display yellow';
-      label.textContent = 'Moderate';
-      label.className = 'difficulty-label yellow';
+      label.textContent = 'Moderate'; label.className = 'difficulty-label yellow';
     } else {
       display.className = 'chance-display red';
-      label.textContent = 'Hard';
-      label.className = 'difficulty-label red';
+      label.textContent = 'Hard'; label.className = 'difficulty-label red';
+    }
+  }
+
+  function updateChance() {
+    computeChance(true);
+    if (_syncing || !window._fbDb) return;
+    clearTimeout(_inputTimer);
+    _inputTimer = setTimeout(function() {
+      window._fbDb.ref('/checkRoller').update({
+        check:    parseFloat(document.getElementById('check').value) || 0,
+        diff:     parseFloat(document.getElementById('difficulty').value) || 0,
+        modifier: parseFloat(document.getElementById('modifier').value) || 0,
+        roll: null, target: null, success: null
+      }).catch(function(e){ console.warn('FB write', e); });
+    }, 350);
+  }
+
+  function applyRollResult(roll, target, success) {
+    const result     = document.getElementById('resultDisplay');
+    const rollDisplay = document.getElementById('rollDisplay');
+    rollDisplay.textContent = 'Rolled: ' + roll + ' (need ≤ ' + target + ')';
+    if (success) {
+      result.textContent = 'Success!'; result.className = 'result-display green';
+    } else {
+      result.textContent = 'Failure.'; result.className = 'result-display red';
     }
   }
 
   function rollCheck() {
-    const result = document.getElementById('resultDisplay');
+    const result     = document.getElementById('resultDisplay');
     const rollDisplay = document.getElementById('rollDisplay');
-
     if (effectiveChance === null) {
       result.textContent = 'Enter values first.';
       result.className = 'result-display';
       rollDisplay.textContent = '';
       return;
     }
-
-    const roll = Math.floor(Math.random() * 100) + 1;
-    const target = Math.round(effectiveChance);
-    rollDisplay.textContent = `Rolled: ${roll} (need ≤ ${target})`;
-
-    if (roll <= target) {
-      result.textContent = 'Success!';
-      result.className = 'result-display green';
-    } else {
-      result.textContent = 'Failure.';
-      result.className = 'result-display red';
+    const roll    = Math.floor(Math.random() * 100) + 1;
+    const target  = Math.round(effectiveChance);
+    const success = roll <= target;
+    applyRollResult(roll, target, success);
+    if (window._fbDb) {
+      window._fbDb.ref('/checkRoller').update({
+        check:    parseFloat(document.getElementById('check').value) || 0,
+        diff:     parseFloat(document.getElementById('difficulty').value) || 0,
+        modifier: parseFloat(document.getElementById('modifier').value) || 0,
+        roll, target, success
+      }).catch(function(e){ console.warn('FB roll write', e); });
     }
+  }
+
+  // Listen for remote updates
+  if (window._fbDb) {
+    window._fbDb.ref('/checkRoller').on('value', function(snap) {
+      if (_syncing) return;
+      const d = snap.val();
+      if (d) applyState(d);
+    });
   }
 </script>
 </body>
