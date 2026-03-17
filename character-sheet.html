@@ -2148,7 +2148,7 @@ function CharacterSheetView({ playerId, sheet, onUpdate, skillPoints, onSkillPoi
 
   // Shards
   const shardsKey = 'cs_shards_'+playerId;
-  const [shards, setShards] = React.useState(() => { try { const v=localStorage.getItem(shardsKey); return v?parseInt(v):0; } catch { return 0; } });
+  const [shards, setShards] = React.useState(0);
   const _shardsTimer = React.useRef(null);
   function handleShardsChange(val) {
     setShards(val);
@@ -2503,29 +2503,34 @@ function App() {
   const lsGet = (key, def) => { try { const v=localStorage.getItem(key); return v!=null?JSON.parse(v):def; } catch { return def; } };
   const lsSet = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
 
-  // Same localStorage keys as the combat simulator — they share data
-  const [sheets, setSheets] = useState(() => {
-    const saved = lsGet('cs_sheets', null);
-    const base = { adam: createSheetState(), brian: createSheetState(), craig: createSheetState() };
-    if (!saved) return base;
-    // Merge saved into base to ensure any new fields have defaults
-    return {
-      adam:  { ...base.adam,  ...saved.adam  },
-      brian: { ...base.brian, ...saved.brian },
-      craig: { ...base.craig, ...saved.craig },
-    };
-  });
+  // Firebase is the source of truth — start with defaults, load from Firebase on mount
+  const [sheets, setSheets] = useState({ adam: createSheetState(), brian: createSheetState(), craig: createSheetState() });
+  const [adamSkillPoints,  setAdamSkillPoints]  = useState({});
+  const [adamBonusPoints,  setAdamBonusPoints]  = useState(0);
+  const [craigSkillPoints, setCraigSkillPoints] = useState({});
+  const [craigBonusPoints, setCraigBonusPoints] = useState(0);
+  const [brianSkillPoints, setBrianSkillPoints] = useState({});
+  const [brianBonusPoints, setBrianBonusPoints] = useState(0);
+  const [adamActiveClasses,  setAdamActiveClasses]  = useState([]);
+  const [craigActiveClasses, setCraigActiveClasses] = useState([]);
+  const [brianActiveClasses, setBrianActiveClasses] = useState([]);
 
-  const [adamSkillPoints,  setAdamSkillPoints]  = useState(() => lsGet('cs_adamSkillPoints', {}));
-  const [adamBonusPoints,  setAdamBonusPoints]  = useState(() => lsGet('cs_adamBonusPoints', 0));
-  const [craigSkillPoints, setCraigSkillPoints] = useState(() => lsGet('cs_craigSkillPoints', {}));
-  const [craigBonusPoints, setCraigBonusPoints] = useState(() => lsGet('cs_craigBonusPoints', 0));
-  const [brianSkillPoints, setBrianSkillPoints] = useState(() => lsGet('cs_brianSkillPoints', {}));
-  const [brianBonusPoints, setBrianBonusPoints] = useState(() => lsGet('cs_brianBonusPoints', 0));
-
-  const [adamActiveClasses,  setAdamActiveClasses]  = useState(() => lsGet('cs_adamActiveClasses', []));
-  const [craigActiveClasses, setCraigActiveClasses] = useState(() => lsGet('cs_craigActiveClasses', []));
-  const [brianActiveClasses, setBrianActiveClasses] = useState(() => lsGet('cs_brianActiveClasses', []));
+  useEffect(() => {
+    if (!window._fbDb) return;
+    window._fbDb.ref('/characterSheet').once('value').then(snap => {
+      const d = snap.val(); if (!d) return;
+      if (d.sheets) setSheets(prev => ({ adam: { ...prev.adam, ...(d.sheets.adam||{}) }, brian: { ...prev.brian, ...(d.sheets.brian||{}) }, craig: { ...prev.craig, ...(d.sheets.craig||{}) } }));
+      if (d.adamSkillPoints)  setAdamSkillPoints(d.adamSkillPoints);
+      if (d.adamBonusPoints  != null) setAdamBonusPoints(d.adamBonusPoints);
+      if (d.craigSkillPoints) setCraigSkillPoints(d.craigSkillPoints);
+      if (d.craigBonusPoints != null) setCraigBonusPoints(d.craigBonusPoints);
+      if (d.brianSkillPoints) setBrianSkillPoints(d.brianSkillPoints);
+      if (d.brianBonusPoints != null) setBrianBonusPoints(d.brianBonusPoints);
+      if (d.adamActiveClasses)  setAdamActiveClasses(d.adamActiveClasses);
+      if (d.craigActiveClasses) setCraigActiveClasses(d.craigActiveClasses);
+      if (d.brianActiveClasses) setBrianActiveClasses(d.brianActiveClasses);
+    });
+  }, []);
 
   const [activePlayer, setActivePlayer] = useState('adam');
   const [savedFlash, setSavedFlash] = useState(false);

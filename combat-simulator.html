@@ -2819,30 +2819,56 @@ function App() {
   const lsGet=(key,def)=>{try{const v=localStorage.getItem(key);return v!=null?JSON.parse(v):def;}catch{return def;}};
 
   const [phase,setPhase]=useState('setup');
-  const [selectedEnvironment,setSelectedEnvironment]=useState(()=>lsGet('cs_selectedEnvironment',''));
-  const [adamSkillPoints,setAdamSkillPoints]=useState(()=>lsGet('cs_adamSkillPoints',{}));
-  const [craigSkillPoints,setCraigSkillPoints]=useState(()=>lsGet('cs_craigSkillPoints',{}));
-  const [brianSkillPoints,setBrianSkillPoints]=useState(()=>lsGet('cs_brianSkillPoints',{}));
-  const [sheets,setSheets]=useState(()=>lsGet('cs_sheets',{adam:createSheetState(),brian:createSheetState(),craig:createSheetState()}));
-  const [playerAbilities,setPlayerAbilities]=useState(()=>lsGet('cs_playerAbilities',Object.fromEntries(PLAYER_DEFS.map(p=>[p.id,[]]))));
+  const [selectedEnvironment,setSelectedEnvironment]=useState('');
+  const [adamSkillPoints,setAdamSkillPoints]=useState({});
+  const [craigSkillPoints,setCraigSkillPoints]=useState({});
+  const [brianSkillPoints,setBrianSkillPoints]=useState({});
+  const [sheets,setSheets]=useState({adam:createSheetState(),brian:createSheetState(),craig:createSheetState()});
+  const [playerAbilities,setPlayerAbilities]=useState(Object.fromEntries(PLAYER_DEFS.map(p=>[p.id,[]])));
   const [abilityPickerFor,setAbilityPickerFor]=useState(null);
-  const [playerSpecialAttacks,setPlayerSpecialAttacks]=useState(()=>lsGet('cs_playerSpecialAttacks',Object.fromEntries(PLAYER_DEFS.map(p=>[p.id,[]]))));
+  const [playerSpecialAttacks,setPlayerSpecialAttacks]=useState(Object.fromEntries(PLAYER_DEFS.map(p=>[p.id,[]])));
   const [attackPickerFor,setAttackPickerFor]=useState(null);
   const [selectedCategory,setSelectedCategory]=useState(null);
-  const [counts,setCounts]=useState(()=>lsGet('cs_counts',{}));
-  const [startHp,setStartHp]=useState(()=>lsGet('cs_startHp',Object.fromEntries(PLAYER_DEFS.map(p=>[p.id,100]))));
-  const [startGuard,setStartGuard]=useState(()=>lsGet('cs_startGuard',Object.fromEntries(PLAYER_DEFS.map(p=>[p.id,0]))));
-  const [monsterStats,setMonsterStats]=useState(()=>lsGet('cs_monsterStats',{}));
+  const [counts,setCounts]=useState({});
+  const [startHp,setStartHp]=useState(Object.fromEntries(PLAYER_DEFS.map(p=>[p.id,100])));
+  const [startGuard,setStartGuard]=useState(Object.fromEntries(PLAYER_DEFS.map(p=>[p.id,0])));
+  const [monsterStats,setMonsterStats]=useState({});
 
-  useEffect(()=>{try{localStorage.setItem('cs_adamSkillPoints',JSON.stringify(adamSkillPoints));}catch{}},[adamSkillPoints]);
-  useEffect(()=>{try{localStorage.setItem('cs_craigSkillPoints',JSON.stringify(craigSkillPoints));}catch{}},[craigSkillPoints]);
-  useEffect(()=>{try{localStorage.setItem('cs_playerAbilities',JSON.stringify(playerAbilities));}catch{}},[playerAbilities]);
-  useEffect(()=>{try{localStorage.setItem('cs_playerSpecialAttacks',JSON.stringify(playerSpecialAttacks));}catch{}},[playerSpecialAttacks]);
-  useEffect(()=>{try{localStorage.setItem('cs_counts',JSON.stringify(counts));}catch{}},[counts]);
-  useEffect(()=>{try{localStorage.setItem('cs_startHp',JSON.stringify(startHp));}catch{}},[startHp]);
-  useEffect(()=>{try{localStorage.setItem('cs_startGuard',JSON.stringify(startGuard));}catch{}},[startGuard]);
-  useEffect(()=>{try{localStorage.setItem('cs_monsterStats',JSON.stringify(monsterStats));}catch{}},[monsterStats]);
-  useEffect(()=>{try{localStorage.setItem('cs_selectedEnvironment',JSON.stringify(selectedEnvironment));}catch{}},[selectedEnvironment]);
+  // Load setup state from Firebase on mount (single source of truth)
+  useEffect(()=>{
+    if(!window._fbDb) return;
+    window._fbDb.ref('/characterSheet').once('value').then(snap=>{
+      const d=snap.val(); if(!d) return;
+      if(d.sheets) setSheets(prev=>({adam:{...prev.adam,...(d.sheets.adam||{})},brian:{...prev.brian,...(d.sheets.brian||{})},craig:{...prev.craig,...(d.sheets.craig||{})}}));
+      if(d.adamSkillPoints) setAdamSkillPoints(d.adamSkillPoints);
+      if(d.craigSkillPoints) setCraigSkillPoints(d.craigSkillPoints);
+      if(d.brianSkillPoints) setBrianSkillPoints(d.brianSkillPoints);
+    });
+    window._fbDb.ref('/setupState').once('value').then(snap=>{
+      const d=snap.val(); if(!d) return;
+      if(d.selectedEnvironment!=null) setSelectedEnvironment(d.selectedEnvironment);
+      if(d.playerAbilities) setPlayerAbilities(d.playerAbilities);
+      if(d.playerSpecialAttacks) setPlayerSpecialAttacks(d.playerSpecialAttacks);
+      if(d.counts) setCounts(d.counts);
+      if(d.startHp) setStartHp(d.startHp);
+      if(d.startGuard) setStartGuard(d.startGuard);
+      if(d.monsterStats) setMonsterStats(d.monsterStats);
+    });
+    // Also listen for combat state
+    window._fbDb.ref('/combat/phase').once('value').then(snap=>{
+      const d=snap.val(); if(d&&d!=='setup') setPhase(d);
+    });
+  },[]);
+
+  // Save setup state to Firebase (debounced)
+  const _setupTimer = useRef(null);
+  useEffect(()=>{
+    if(!window._fbDb) return;
+    clearTimeout(_setupTimer.current);
+    _setupTimer.current=setTimeout(()=>{
+      window._fbDb.ref('/setupState').set({selectedEnvironment,playerAbilities,playerSpecialAttacks,counts,startHp,startGuard,monsterStats}).catch(e=>console.warn('FB setup write',e));
+    },1000);
+  },[selectedEnvironment,playerAbilities,playerSpecialAttacks,counts,startHp,startGuard,monsterStats]);
 
   // ── Firebase combat sync ──────────────────────────────────────────────────
   const _fbCombatTimers  = useRef({});
