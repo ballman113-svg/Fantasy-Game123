@@ -2906,7 +2906,7 @@ function App() {
       try {
         const arr = typeof d === 'string' ? JSON.parse(d) : d;
         setFbDebug('FB: got c=' + (Array.isArray(arr) ? arr.length : 'NOT_ARRAY:' + typeof arr));
-        setCombatants(arr);
+        if (setCombatantsRef.current) setCombatantsRef.current(arr);
         combatantsRef.current = arr;
       } catch(e) { setFbDebug('FB: parse ERR ' + e.message); console.warn('combatants parse error', e); }
     }, false, true);
@@ -3156,6 +3156,8 @@ function App() {
   ];
   const allCategories = [...new Set([...Object.keys(MONSTER_TEMPLATES), ...dbCreatures.map(c => c.category)])];
   const [combatants,setCombatants]=useState([]);
+  const setCombatantsRef = useRef(null);
+  useEffect(() => { setCombatantsRef.current = setCombatants; }, [setCombatants]);
   const [order,setOrder]=useState([]);
   const [activeTurnId,setActiveTurnId]=useState(null);
   const [turnQueue,setTurnQueue]=useState([]); // [{id, nextTurnTime, casting: null|{spellName,resolveTime}}]
