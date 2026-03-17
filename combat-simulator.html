@@ -2938,9 +2938,18 @@ function App() {
     clearTimeout(_fbCombatTimers.current['combatants']);
     _fbCombatTimers.current['combatants'] = setTimeout(() => {
       _fbCombatPending.current['combatants'] = true;
-      window._fbDb.ref('/combat/combatants').set(JSON.stringify(combatants))
-        .then(() => { setTimeout(() => { _fbCombatPending.current['combatants'] = false; }, 300); })
-        .catch(e => { _fbCombatPending.current['combatants'] = false; console.warn('FB combatants write', e); });
+      const payload = JSON.stringify(combatants);
+      setFbDebug('FB: writing c=' + combatants.length + ' sz=' + Math.round(payload.length/1024) + 'kb');
+      window._fbDb.ref('/combat/combatants').set(payload)
+        .then(() => { 
+          setTimeout(() => { _fbCombatPending.current['combatants'] = false; }, 300);
+          setFbDebug('FB: wrote c=' + combatants.length + ' OK');
+        })
+        .catch(e => { 
+          _fbCombatPending.current['combatants'] = false; 
+          setFbDebug('FB: WRITE ERR ' + e.message);
+          console.warn('FB combatants write', e); 
+        });
     }, 300);
   }, [combatants]);
   useEffect(() => { fbCombatWrite('order',        order,        300); }, [order]);
