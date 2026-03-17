@@ -1,0 +1,12 @@
+{
+  "name": "Creature Database",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "action": {
+    "title": "Creature Database",
+    "icon": "https://ballman113-svg.github.io/Fantasy-Game123/icon-creature.svg",
+    "popover": "https://ballman113-svg.github.io/Fantasy-Game123/creature-database.html",
+    "height": 800,
+    "width": 1100
+  }
+}

@@ -12,9 +12,23 @@
   body{background:#111827;color:#f9fafb;font-family:'Georgia',serif;min-height:100vh;}
   ::-webkit-scrollbar{width:6px;} ::-webkit-scrollbar-track{background:#1f2937;} ::-webkit-scrollbar-thumb{background:#4b5563;border-radius:3px;}
 </style>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
 <div id="root"></div>
+<script>
+window._fbDb = null;
+(function(){
+  try {
+    var cfg={apiKey:"AIzaSyDWPAf3783eIjEwYj-qbFSyiJSZ49E3oZg",authDomain:"the-boyz-rpg-game.firebaseapp.com",databaseURL:"https://the-boyz-rpg-game-default-rtdb.firebaseio.com",projectId:"the-boyz-rpg-game",storageBucket:"the-boyz-rpg-game.firebasestorage.app",messagingSenderId:"841803624391",appId:"1:841803624391:web:51d8e1912b6a79b08873e2"};
+    var app=(firebase.apps&&firebase.apps.length)?firebase.app():firebase.initializeApp(cfg);
+    window._fbDb=firebase.database(app);
+  }catch(e){console.warn('Firebase unavailable',e);}
+})();
+window.fbSanitize=function(v){if(Array.isArray(v))return v.map(window.fbSanitize);if(v&&typeof v==='object'){var o={};for(var k in v)o[k.replace(/\//g,'|SLASH|')]=window.fbSanitize(v[k]);return o;}return v;};
+window.fbRestore=function(v){if(Array.isArray(v))return v.map(window.fbRestore);if(v&&typeof v==='object'){var o={};for(var k in v)o[k.replace(/\|SLASH\|/g,'/')]=window.fbRestore(v[k]);return o;}return v;};
+</script>
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
@@ -143,6 +157,9 @@ function saveDB(creatures) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({ version: DB_VERSION, creatures }));
   } catch {}
+  if (window._fbDb) {
+    window._fbDb.ref('/creatureDatabase').set(window.fbSanitize(creatures)).catch(e => console.warn('FB creature write', e));
+  }
 }
 
 // ─── CREATURE CARD ────────────────────────────────────────────────────────────
@@ -516,6 +533,34 @@ function EditModal({ creature: init, onSave, onClose }) {
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 function App() {
   const [creatures, setCreatures] = useState(() => loadDB());
+  const _fbCreatureSyncing = useRef(false);
+  // Load from Firebase on mount
+  useEffect(() => {
+    if (!window._fbDb) return;
+    window._fbDb.ref('/creatureDatabase').once('value').then(snap => {
+      const d = snap.val();
+      if (!d || !Array.isArray(d) || !d.length) return;
+      try {
+        const restored = window.fbRestore(d);
+        _fbCreatureSyncing.current = true;
+        setCreatures(restored);
+        localStorage.setItem(LS_KEY, JSON.stringify({ version: DB_VERSION, creatures: restored }));
+        setTimeout(() => { _fbCreatureSyncing.current = false; }, 600);
+      } catch(e) { console.warn('FB creature load', e); }
+    });
+    // Real-time listener
+    const ref = window._fbDb.ref('/creatureDatabase');
+    ref.on('value', snap => {
+      if (_fbCreatureSyncing.current) return;
+      const d = snap.val();
+      if (!d || !Array.isArray(d)) return;
+      _fbCreatureSyncing.current = true;
+      const restored = window.fbRestore(d);
+      setCreatures(restored);
+      setTimeout(() => { _fbCreatureSyncing.current = false; }, 600);
+    });
+    return () => ref.off();
+  }, []);
   const [modal, setModal] = useState(null); // null | creature object (new or edit)
   const [activeCategory, setActiveCategory] = useState('All');
   const [search, setSearch] = useState('');

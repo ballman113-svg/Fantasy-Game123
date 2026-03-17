@@ -29,6 +29,8 @@ window._fbDb = null;
     window._fbDb=firebase.database(app);
   }catch(e){console.warn('Firebase unavailable',e);}
 })();
+window.fbSanitize=function(v){if(Array.isArray(v))return v.map(window.fbSanitize);if(v&&typeof v==='object'){var o={};for(var k in v)o[k.replace(/\//g,'|SLASH|')]=window.fbSanitize(v[k]);return o;}return v;};
+window.fbRestore=function(v){if(Array.isArray(v))return v.map(window.fbRestore);if(v&&typeof v==='object'){var o={};for(var k in v)o[k.replace(/\|SLASH\|/g,'/')]=window.fbRestore(v[k]);return o;}return v;};
 </script>
 <script type="text/babel">
 const {useState, useEffect, useRef} = React;
@@ -2599,7 +2601,7 @@ function App(){
       if(!d||!Array.isArray(d)||!d.length) return;
       try{
         var ids=new Set(DEFAULT_ITEMS.map(function(i){return i.id;}));
-        var merged=DEFAULT_ITEMS.slice().concat(d.filter(function(i){return !ids.has(i.id);}));
+        var restored=window.fbRestore(d);var merged=DEFAULT_ITEMS.slice().concat(restored.filter(function(i){return !ids.has(i.id);}));
         _fbSyncing.current=true;
         setItems(merged);
         localStorage.setItem(LS_KEY,JSON.stringify(d));
@@ -2626,7 +2628,7 @@ function App(){
           var def=DEFAULT_ITEMS.find(function(d){return d.id===i.id;});
           return def&&JSON.stringify(i)!==JSON.stringify(def);
         });
-        window._fbDb.ref('/itemDatabase').set(custom).catch(function(e){console.warn('FB item write',e);});
+        window._fbDb.ref('/itemDatabase').set(window.fbSanitize(custom)).catch(function(e){console.warn('FB item write',e);});
       },400);
     }
     return function(){clearTimeout(t);};

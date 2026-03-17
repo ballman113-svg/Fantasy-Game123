@@ -2848,30 +2848,46 @@ function App() {
   const _fbCombatSyncing = useRef(false);
   const _fbCombatTimers  = useRef({});
 
-  function fbCombatWrite(key, value) {
+  // Sanitize/restore forward slashes in object keys for Firebase
+  function fbSanitize(val) {
+    if (Array.isArray(val)) return val.map(fbSanitize);
+    if (val && typeof val === 'object') {
+      const out = {};
+      for (const k in val) out[k.replace(/\//g, '|SLASH|')] = fbSanitize(val[k]);
+      return out;
+    }
+    return val;
+  }
+  function fbRestore(val) {
+    if (Array.isArray(val)) return val.map(fbRestore);
+    if (val && typeof val === 'object') {
+      const out = {};
+      for (const k in val) out[k.replace(/\|SLASH\|/g, '/')] = fbRestore(val[k]);
+      return out;
+    }
+    return val;
+  }
+
+  function fbCombatWrite(key, value, debounce=300) {
     if (!window._fbDb || _fbCombatSyncing.current) return;
     clearTimeout(_fbCombatTimers.current[key]);
     _fbCombatTimers.current[key] = setTimeout(() => {
-      window._fbDb.ref('/combat/' + key).set(value).catch(e => console.warn('FB combat write', key, e));
-    }, 300);
-  }
-
-  function fbCombatWriteNow(key, value) {
-    if (!window._fbDb) return;
-    window._fbDb.ref('/combat/' + key).set(value).catch(e => console.warn('FB combat write', key, e));
+      window._fbDb.ref('/combat/' + key).set(fbSanitize(value)).catch(e => console.warn('FB combat write', key, e));
+    }, debounce);
   }
 
   // Listen for remote combat state changes
   useEffect(() => {
     if (!window._fbDb) return;
     const refs = [];
-    const listen = (key, apply) => {
+    const listen = (key, apply, allowNull=false) => {
       const ref = window._fbDb.ref('/combat/' + key);
       ref.on('value', snap => {
         if (_fbCombatSyncing.current) return;
-        const d = snap.val();
+        const raw = snap.val();
+        if (raw == null && !allowNull) return;
         _fbCombatSyncing.current = true;
-        apply(d);
+        apply(raw == null ? null : fbRestore(raw));
         setTimeout(() => { _fbCombatSyncing.current = false; }, 500);
       });
       refs.push(ref);
@@ -2879,7 +2895,7 @@ function App() {
     listen('phase',        d => { if (d != null) setPhase(d); });
     listen('combatants',   d => { if (d != null) { setCombatants(d); combatantsRef.current = d; } });
     listen('order',        d => { if (d != null) setOrder(d); });
-    listen('activeTurnId', d => { setActiveTurnId_(d); });
+    listen('activeTurnId', d => { setActiveTurnId_(d); }, true);
     listen('turnQueue',    d => { if (d != null) setTurnQueue_(d); });
     listen('round',        d => { if (d != null) setRound(d); });
     listen('log',          d => { if (d != null) setLog(d); });
@@ -2888,14 +2904,14 @@ function App() {
   }, []);
 
   // Write combat state to Firebase on change
-  useEffect(() => { fbCombatWrite('phase', phase); }, [phase]);
-  useEffect(() => { fbCombatWrite('combatants', combatants); }, [combatants]);
-  useEffect(() => { fbCombatWrite('order', order); }, [order]);
-  useEffect(() => { fbCombatWriteNow('activeTurnId', activeTurnId); }, [activeTurnId]);
-  useEffect(() => { fbCombatWrite('turnQueue', turnQueue); }, [turnQueue]);
-  useEffect(() => { fbCombatWrite('round', round); }, [round]);
-  useEffect(() => { fbCombatWrite('log', log); }, [log]);
-  useEffect(() => { fbCombatWrite('step', step); }, [step]);
+  useEffect(() => { fbCombatWrite('phase',        phase,        0);   }, [phase]);
+  useEffect(() => { fbCombatWrite('combatants',   combatants,   300); }, [combatants]);
+  useEffect(() => { fbCombatWrite('order',        order,        300); }, [order]);
+  useEffect(() => { fbCombatWrite('activeTurnId', activeTurnId, 0);   }, [activeTurnId]);
+  useEffect(() => { fbCombatWrite('turnQueue',    turnQueue,    300); }, [turnQueue]);
+  useEffect(() => { fbCombatWrite('round',        round,        0);   }, [round]);
+  useEffect(() => { fbCombatWrite('log',          log,          300); }, [log]);
+  useEffect(() => { fbCombatWrite('step',         step,         0);   }, [step]);
   // ─────────────────────────────────────────────────────────────────────────
 
   // Single interval: runs only during combat, handles timer + turn activation + DoT ticks
