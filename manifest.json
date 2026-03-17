@@ -1,0 +1,16 @@
+{
+  "name": "Check Roller",
+  "id": "com.aldra.checkroller",
+  "version": "1.0.0",
+  "description": "AldraRPG skill check roller",
+  "author": "ballman113-svg",
+  "action": {
+    "title": "Check Roller",
+    "icon": "/check_roller.html",
+    "popover": {
+      "url": "/check_roller.html",
+      "height": 560,
+      "width": 360
+    }
+  }
+}
