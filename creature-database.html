@@ -568,7 +568,7 @@ function App() {
   const firstRun = useRef(true);
 
   useEffect(() => {
-    if (firstRun.current) { firstRun.current = false; saveDB(creatures); return; }
+    if (firstRun.current) { firstRun.current = false; return; }
     saveDB(creatures);
     setSaved(true);
     const t = setTimeout(() => setSaved(false), 1500);

@@ -2550,15 +2550,17 @@ function App() {
   // Firebase sync — each key gets its own path to avoid browsers overwriting each other
   const _fbSyncing = useRef(false);
   const _fbTimers  = useRef({});
+  const _fbLoaded  = useRef(false);
 
   function fbListen(path, apply, allowNull) {
-    if (!window._fbDb) return () => {};
+    if (!window._fbDb) { _fbLoaded.current = true; return () => {}; }
     const ref = window._fbDb.ref(path);
     ref.on('value', snap => {
       if (_fbSyncing.current) return;
       const d = snap.val();
-      if (d == null && !allowNull) return;
+      if (d == null && !allowNull) { _fbLoaded.current = true; return; }
       _fbSyncing.current = true;
+      _fbLoaded.current = true;
       apply(d == null ? {} : d);
       setTimeout(() => { _fbSyncing.current = false; }, 800);
     });
@@ -2566,7 +2568,7 @@ function App() {
   }
 
   function fbWrite(key, path, value) {
-    if (!window._fbDb || _fbSyncing.current) return;
+    if (!window._fbDb || _fbSyncing.current || !_fbLoaded.current) return;
     clearTimeout(_fbTimers.current[key]);
     _fbTimers.current[key] = setTimeout(() => {
       window._fbDb.ref(path).set(value).catch(e => console.warn('FB write', path, e));
