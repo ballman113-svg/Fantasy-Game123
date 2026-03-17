@@ -2817,6 +2817,15 @@ function InventoryModal({ playerId, playerName, combatantId, onClose, onHeal, on
 
 function App() {
   const lsGet=(key,def)=>{try{const v=localStorage.getItem(key);return v!=null?JSON.parse(v):def;}catch{return def;}};
+  // Detect GM role via Owlbear SDK; falls back to URL param ?gm=1 for local testing.
+  const [isGM, setIsGM] = useState(false);
+  useEffect(() => {
+    if (typeof OBR !== 'undefined') {
+      OBR.player.getRole().then(role => setIsGM(role === 'GM'));
+    } else {
+      setIsGM(new URLSearchParams(window.location.search).get('gm') === '1');
+    }
+  }, []);
 
   const [phase,setPhase]=useState('setup');
   const [selectedEnvironment,setSelectedEnvironment]=useState('');
@@ -2860,10 +2869,10 @@ function App() {
     });
   },[]);
 
-  // Save setup state to Firebase (debounced)
+  // Save setup state to Firebase (debounced) — GM only
   const _setupTimer = useRef(null);
   useEffect(()=>{
-    if(!window._fbDb) return;
+    if(!window._fbDb || !isGM) return;
     clearTimeout(_setupTimer.current);
     _setupTimer.current=setTimeout(()=>{
       window._fbDb.ref('/setupState').set({selectedEnvironment,playerAbilities,playerSpecialAttacks,counts,startHp,startGuard,monsterStats}).catch(e=>console.warn('FB setup write',e));
@@ -2957,10 +2966,10 @@ function App() {
     if (phase === 'combat' || phase === 'combat_setup') setFbDebug('FB: phase=' + phase + ' c=' + combatants.length);
   }, [phase, combatants]);
 
-  // Write combat state to Firebase on change
-  useEffect(() => { fbCombatWrite('phase',        phase,        0);   }, [phase]);
+  // Write combat state to Firebase on change — GM only
+  useEffect(() => { if (!isGM) return; fbCombatWrite('phase',        phase,        0);   }, [phase]);
   useEffect(() => {
-    if (!window._fbDb) return;
+    if (!window._fbDb || !isGM) return;
     clearTimeout(_fbCombatTimers.current['combatants']);
     _fbCombatTimers.current['combatants'] = setTimeout(() => {
       _fbCombatPending.current['combatants'] = true;
@@ -2978,17 +2987,22 @@ function App() {
         });
     }, 300);
   }, [combatants]);
-  useEffect(() => { fbCombatWrite('order',        order,        300); }, [order]);
-  useEffect(() => { fbCombatWrite('activeTurnId', activeTurnId, 0);   }, [activeTurnId]);
-  useEffect(() => { fbCombatWrite('turnQueue',    turnQueue,    300); }, [turnQueue]);
-  useEffect(() => { fbCombatWrite('round',        round,        0);   }, [round]);
-  useEffect(() => { fbCombatWrite('log',          log,          300); }, [log]);
-  useEffect(() => { fbCombatWrite('step',         step,         0);   }, [step]);
-  useEffect(() => { fbCombatWrite('combatElapsed', combatElapsed, 500); }, [combatElapsed]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('order',        order,        300); }, [order]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('activeTurnId', activeTurnId, 0);   }, [activeTurnId]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('turnQueue',    turnQueue,    300); }, [turnQueue]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('round',        round,        0);   }, [round]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('log',          log,          300); }, [log]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('step',         step,         0);   }, [step]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('combatElapsed', combatElapsed, 500); }, [combatElapsed]);
   // ─────────────────────────────────────────────────────────────────────────
 
-  // Single interval: runs only during combat, handles timer + turn activation + DoT ticks
+  // Single interval: runs only during combat on the GM browser.
+  // Non-GM browsers receive combatElapsed via Firebase sync and need no local interval.
   useEffect(()=>{
+    if(!isGM){
+      clearInterval(timerRef.current);
+      return;
+    }
     if(phase!=='combat'){
       clearInterval(timerRef.current);
       if(phase==='setup'){ setCombatElapsed(0); combatElapsedRef.current=0; lastTickRef.current=-1; }
@@ -6087,7 +6101,7 @@ addLog(`✦ ${atk.name}'s weapon procs ${proc.condition} on ${target.name} for $
   return (
     <div style={{background:'#111827',color:'#f9fafb',minHeight:'100vh',fontFamily:'system-ui,sans-serif'}}>
       <style>{`@keyframes floatUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-48px)}} @keyframes hitShake{0%{transform:translateX(0);background:#1f2937}15%{transform:translateX(-7px);background:#7f1d1d}35%{transform:translateX(7px);background:#7f1d1d}55%{transform:translateX(-4px);background:#7f1d1d}75%{transform:translateX(4px);background:#450a0a}100%{transform:translateX(0);background:#1f2937}}`}</style>
-      <div style={{position:'fixed',bottom:8,right:8,background:'#000',color:'#0f0',fontSize:10,padding:'2px 6px',borderRadius:4,zIndex:9999,opacity:0.8}}>{fbDebug}</div>
+      <div style={{position:'fixed',bottom:8,right:8,background:'#000',color:'#0f0',fontSize:10,padding:'2px 6px',borderRadius:4,zIndex:9999,opacity:0.8}}>{fbDebug} {isGM ? '| GM' : '| VIEW-ONLY'}</div>
       <div style={{background:'#1f2937',padding:'10px 16px',display:'flex',alignItems:'center',gap:16,borderBottom:'1px solid #374151'}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <button onClick={()=>setRound(r=>Math.max(1,r-1))} style={btn({padding:'4px 10px'})}>◀</button>
