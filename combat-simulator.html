@@ -14,10 +14,22 @@
     ::-webkit-scrollbar-track { background: #1f2937; }
     ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
   </style>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/babel">
+  <script>
+window._fbDb = null;
+(function(){
+  try {
+    var cfg={apiKey:"AIzaSyDWPAf3783eIjEwYj-qbFSyiJSZ49E3oZg",authDomain:"the-boyz-rpg-game.firebaseapp.com",databaseURL:"https://the-boyz-rpg-game-default-rtdb.firebaseio.com",projectId:"the-boyz-rpg-game",storageBucket:"the-boyz-rpg-game.firebasestorage.app",messagingSenderId:"841803624391",appId:"1:841803624391:web:51d8e1912b6a79b08873e2"};
+    var app=(firebase.apps&&firebase.apps.length)?firebase.app():firebase.initializeApp(cfg);
+    window._fbDb=firebase.database(app);
+  }catch(e){console.warn('Firebase unavailable',e);}
+})();
+</script>
+<script type="text/babel">
     const { useState, useRef, useEffect } = React;
 
 
@@ -2699,7 +2711,7 @@ function InventoryModal({ playerId, playerName, combatantId, onClose, onHeal, on
   function parseFlatStatBuff(text) {
     if (!text) return null;
     // Matches: "Increases Strength by 20 for 3 rounds"
-    const m = text.match(/increases?\s+(\w+(?:\s+\w+)?)\s+by\s+(\d+)\s+for\s+(\d+)\s+rounds?/i);
+    const m = text.match(/increases?\s+(\w+(?:\s+\w+)?)\s+by\s+(\d+)\s+for\s+(\d+)\s+(?:rounds?|seconds?)/i);
     if (m) return { stat: m[1].trim(), amount: parseInt(m[2]), rounds: parseInt(m[3]) };
     return null;
   }
@@ -2831,6 +2843,61 @@ function App() {
   useEffect(()=>{try{localStorage.setItem('cs_startGuard',JSON.stringify(startGuard));}catch{}},[startGuard]);
   useEffect(()=>{try{localStorage.setItem('cs_monsterStats',JSON.stringify(monsterStats));}catch{}},[monsterStats]);
   useEffect(()=>{try{localStorage.setItem('cs_selectedEnvironment',JSON.stringify(selectedEnvironment));}catch{}},[selectedEnvironment]);
+
+  // ── Firebase combat sync ──────────────────────────────────────────────────
+  const _fbCombatSyncing = useRef(false);
+  const _fbCombatTimers  = useRef({});
+
+  function fbCombatWrite(key, value) {
+    if (!window._fbDb || _fbCombatSyncing.current) return;
+    clearTimeout(_fbCombatTimers.current[key]);
+    _fbCombatTimers.current[key] = setTimeout(() => {
+      window._fbDb.ref('/combat/' + key).set(value).catch(e => console.warn('FB combat write', key, e));
+    }, 300);
+  }
+
+  function fbCombatWriteNow(key, value) {
+    if (!window._fbDb) return;
+    window._fbDb.ref('/combat/' + key).set(value).catch(e => console.warn('FB combat write', key, e));
+  }
+
+  // Listen for remote combat state changes
+  useEffect(() => {
+    if (!window._fbDb) return;
+    const refs = [];
+    const listen = (key, apply) => {
+      const ref = window._fbDb.ref('/combat/' + key);
+      ref.on('value', snap => {
+        if (_fbCombatSyncing.current) return;
+        const d = snap.val();
+        _fbCombatSyncing.current = true;
+        apply(d);
+        setTimeout(() => { _fbCombatSyncing.current = false; }, 500);
+      });
+      refs.push(ref);
+    };
+    listen('phase',        d => { if (d != null) setPhase(d); });
+    listen('combatants',   d => { if (d != null) { setCombatants(d); combatantsRef.current = d; } });
+    listen('order',        d => { if (d != null) setOrder(d); });
+    listen('activeTurnId', d => { setActiveTurnId_(d); });
+    listen('turnQueue',    d => { if (d != null) setTurnQueue_(d); });
+    listen('round',        d => { if (d != null) setRound(d); });
+    listen('log',          d => { if (d != null) setLog(d); });
+    listen('step',         d => { if (d != null) setStep(d); });
+    return () => refs.forEach(r => r.off());
+  }, []);
+
+  // Write combat state to Firebase on change
+  useEffect(() => { fbCombatWrite('phase', phase); }, [phase]);
+  useEffect(() => { fbCombatWrite('combatants', combatants); }, [combatants]);
+  useEffect(() => { fbCombatWrite('order', order); }, [order]);
+  useEffect(() => { fbCombatWriteNow('activeTurnId', activeTurnId); }, [activeTurnId]);
+  useEffect(() => { fbCombatWrite('turnQueue', turnQueue); }, [turnQueue]);
+  useEffect(() => { fbCombatWrite('round', round); }, [round]);
+  useEffect(() => { fbCombatWrite('log', log); }, [log]);
+  useEffect(() => { fbCombatWrite('step', step); }, [step]);
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Single interval: runs only during combat, handles timer + turn activation + DoT ticks
   useEffect(()=>{
     if(phase!=='combat'){
@@ -3345,7 +3412,7 @@ function App() {
       const {updated,deltas}=applyStatBuff(base,statBonuses);
       const newBuff={type:itemName,spellId:itemName,rounds:buffInfo.rounds,statBonuses,deltas};
       const newBuffs=[...(updated.buffs||[]).filter(b=>b.type!==itemName),newBuff];
-      addLog(`💪 ${c.name} uses ${itemName}. ${buffInfo.stat} +${buffInfo.amount} for ${buffInfo.rounds} rounds.`,'#f59e0b');
+      addLog(`💪 ${c.name} uses ${itemName}. ${buffInfo.stat} +${buffInfo.amount} for ${buffInfo.rounds}s.`,'#f59e0b');
       return {...updated,buffs:newBuffs};
     }));
     setShowInventory(null);
