@@ -2837,15 +2837,23 @@ function App() {
   // Load setup state from Firebase on mount (single source of truth)
   useEffect(()=>{
     if(!window._fbDb) return;
-    window._fbDb.ref('/characterSheet').once('value').then(snap=>{
+    const refs = [];
+
+    const r1 = window._fbDb.ref('/characterSheet');
+    r1.on('value', snap=>{
       const d=snap.val(); if(!d) return;
       if(d.sheets) setSheets(prev=>({adam:{...prev.adam,...(d.sheets.adam||{})},brian:{...prev.brian,...(d.sheets.brian||{})},craig:{...prev.craig,...(d.sheets.craig||{})}}));
       if(d.adamSkillPoints) setAdamSkillPoints(d.adamSkillPoints);
       if(d.craigSkillPoints) setCraigSkillPoints(d.craigSkillPoints);
       if(d.brianSkillPoints) setBrianSkillPoints(d.brianSkillPoints);
     });
-    window._fbDb.ref('/setupState').once('value').then(snap=>{
+    refs.push(r1);
+
+    const r2 = window._fbDb.ref('/setupState');
+    r2.on('value', snap=>{
+      if(_setupSyncing.current) return;
       const d=snap.val(); if(!d) return;
+      _setupSyncing.current = true;
       if(d.selectedEnvironment!=null) setSelectedEnvironment(d.selectedEnvironment);
       if(d.playerAbilities) setPlayerAbilities(d.playerAbilities);
       if(d.playerSpecialAttacks) setPlayerSpecialAttacks(d.playerSpecialAttacks);
@@ -2853,17 +2861,18 @@ function App() {
       if(d.startHp) setStartHp(d.startHp);
       if(d.startGuard) setStartGuard(d.startGuard);
       if(d.monsterStats) setMonsterStats(d.monsterStats);
+      setTimeout(()=>{ _setupSyncing.current = false; }, 500);
     });
-    // Also listen for combat state
-    window._fbDb.ref('/combat/phase').once('value').then(snap=>{
-      const d=snap.val(); if(d&&d!=='setup') setPhase(d);
-    });
+    refs.push(r2);
+
+    return () => refs.forEach(r => r.off());
   },[]);
 
   // Save setup state to Firebase (debounced)
-  const _setupTimer = useRef(null);
+  const _setupTimer   = useRef(null);
+  const _setupSyncing = useRef(false);
   useEffect(()=>{
-    if(!window._fbDb || !_fbLoaded.current) return;
+    if(!window._fbDb || !_fbLoaded.current || _setupSyncing.current) return;
     clearTimeout(_setupTimer.current);
     _setupTimer.current=setTimeout(()=>{
       window._fbDb.ref('/setupState').set({selectedEnvironment,playerAbilities,playerSpecialAttacks,counts,startHp,startGuard,monsterStats}).catch(e=>console.warn('FB setup write',e));
