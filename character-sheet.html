@@ -16,10 +16,22 @@
     .saved-flash { animation: savedFlash 1.2s ease forwards; }
     @keyframes savedFlash { 0%{opacity:1} 60%{opacity:1} 100%{opacity:0} }
   </style>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/babel">
+  <script>
+window._fbDb = null;
+(function(){
+  try {
+    var cfg={apiKey:"AIzaSyDWPAf3783eIjEwYj-qbFSyiJSZ49E3oZg",authDomain:"the-boyz-rpg-game.firebaseapp.com",databaseURL:"https://the-boyz-rpg-game-default-rtdb.firebaseio.com",projectId:"the-boyz-rpg-game",storageBucket:"the-boyz-rpg-game.firebasestorage.app",messagingSenderId:"841803624391",appId:"1:841803624391:web:51d8e1912b6a79b08873e2"};
+    var app=(firebase.apps&&firebase.apps.length)?firebase.app():firebase.initializeApp(cfg);
+    window._fbDb=firebase.database(app);
+  }catch(e){console.warn('Firebase unavailable',e);}
+})();
+</script>
+<script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -1794,6 +1806,7 @@ function TradeModal({item, fromPlayerId, onClose}) {
       }
       localStorage.setItem('cs_inventory_' + toPlayer.id, JSON.stringify(inv));
       window.dispatchEvent(new StorageEvent('storage', {key: 'cs_inventory_' + toPlayer.id}));
+      if (window._fbDb) window._fbDb.ref('/inventory/'+toPlayer.id).set(inv).catch(()=>{});
     } catch { setMsgColor('#f87171'); setMsg('Failed to add to ' + toPlayer.name + "'s inventory."); return; }
 
     // Remove `amount` from sender
@@ -1807,6 +1820,7 @@ function TradeModal({item, fromPlayerId, onClose}) {
           inv[idx] = newQty > 0 ? {...inv[idx], qty: newQty} : {name:'', weight:''};
           localStorage.setItem('cs_inventory_' + fromPlayerId, JSON.stringify(inv));
           window.dispatchEvent(new StorageEvent('storage', {key: 'cs_inventory_' + fromPlayerId}));
+          if (window._fbDb) window._fbDb.ref('/inventory/'+fromPlayerId).set(inv).catch(()=>{});
         }
       }
     } catch {}
@@ -2135,35 +2149,77 @@ function CharacterSheetView({ playerId, sheet, onUpdate, skillPoints, onSkillPoi
   // Shards
   const shardsKey = 'cs_shards_'+playerId;
   const [shards, setShards] = React.useState(() => { try { const v=localStorage.getItem(shardsKey); return v?parseInt(v):0; } catch { return 0; } });
+  const _shardsTimer = React.useRef(null);
   function handleShardsChange(val) {
     setShards(val);
     try { localStorage.setItem(shardsKey, String(val)); } catch {}
+    if (window._fbDb) {
+      clearTimeout(_shardsTimer.current);
+      _shardsTimer.current = setTimeout(() => {
+        window._fbDb.ref('/shards/'+playerId).set(val).catch(e=>console.warn('FB shards write',e));
+      }, 400);
+    }
   }
 
-  // Sync inventory from cs_inventory_<playerId> (written by shops)
-  const syncInventoryFromStorage = React.useCallback(() => {
+  // Sync inventory from localStorage or Firebase
+  const _invSyncing = React.useRef(false);
+  const _invTimer   = React.useRef(null);
+
+  const applyInv = React.useCallback((raw) => {
     try {
-      const raw = localStorage.getItem('cs_inventory_'+playerId);
-      if (raw) {
-        const lsInv = JSON.parse(raw);
-        const merged = Array(20).fill(null).map((_, i) => lsInv[i] || {name:"",weight:""});
-        set("inventory", merged);
-      }
+      const lsInv = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const merged = Array(20).fill(null).map((_, i) => lsInv[i] || {name:"",weight:""});
+      _invSyncing.current = true;
+      set("inventory", merged);
+      setTimeout(() => { _invSyncing.current = false; }, 600);
     } catch {}
   }, [playerId]);
 
   React.useEffect(() => {
-    syncInventoryFromStorage();
+    // localStorage cross-tab
     const onStorage = (e) => {
-      if (e.key === 'cs_inventory_'+playerId) syncInventoryFromStorage();
+      if (e.key === 'cs_inventory_'+playerId) {
+        const raw = localStorage.getItem('cs_inventory_'+playerId);
+        if (raw) applyInv(raw);
+      }
     };
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+
+    // Firebase real-time listener
+    let fbRef = null;
+    if (window._fbDb) {
+      fbRef = window._fbDb.ref('/inventory/'+playerId);
+      fbRef.on('value', snap => {
+        if (_invSyncing.current) return;
+        const d = snap.val();
+        if (d) { applyInv(d); try { localStorage.setItem('cs_inventory_'+playerId, JSON.stringify(d)); } catch {} }
+      });
+      // Also load shards
+      window._fbDb.ref('/shards/'+playerId).once('value').then(snap => {
+        const v = snap.val();
+        if (v != null) setShards(parseInt(v)||0);
+      });
+    } else {
+      // fallback localStorage load
+      const raw = localStorage.getItem('cs_inventory_'+playerId);
+      if (raw) applyInv(raw);
+    }
+
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      if (fbRef) fbRef.off();
+    };
   }, [playerId]);
 
-  // Keep cs_inventory_<playerId> in sync when inventory changes
+  // Keep localStorage + Firebase in sync when inventory changes
   React.useEffect(() => {
     try { localStorage.setItem('cs_inventory_'+playerId, JSON.stringify(inventory)); } catch {}
+    if (window._fbDb && !_invSyncing.current) {
+      clearTimeout(_invTimer.current);
+      _invTimer.current = setTimeout(() => {
+        window._fbDb.ref('/inventory/'+playerId).set(inventory).catch(e=>console.warn('FB inv write',e));
+      }, 400);
+    }
   }, [inventory]);
 
   const hasSkillTree = true;
@@ -2485,6 +2541,51 @@ function App() {
   useEffect(() => { lsSet('cs_adamActiveClasses',  adamActiveClasses);  }, [adamActiveClasses]);
   useEffect(() => { lsSet('cs_craigActiveClasses', craigActiveClasses); }, [craigActiveClasses]);
   useEffect(() => { lsSet('cs_brianActiveClasses', brianActiveClasses); }, [brianActiveClasses]);
+
+  // Firebase sync
+  const _fbRef = useRef(null);
+  const _fbTimer = useRef(null);
+  const _fbSyncing = useRef(false);
+
+  useEffect(() => {
+    if (!window._fbDb) return;
+    _fbRef.current = window._fbDb.ref('/characterSheet');
+    _fbRef.current.on('value', snap => {
+      if (_fbSyncing.current) return;
+      const d = snap.val();
+      if (!d) return;
+      _fbSyncing.current = true;
+      if (d.sheets) setSheets(prev => ({
+        adam:  { ...prev.adam,  ...(d.sheets.adam  || {}) },
+        brian: { ...prev.brian, ...(d.sheets.brian || {}) },
+        craig: { ...prev.craig, ...(d.sheets.craig || {}) },
+      }));
+      if (d.adamSkillPoints)  setAdamSkillPoints(d.adamSkillPoints);
+      if (d.adamBonusPoints  != null) setAdamBonusPoints(d.adamBonusPoints);
+      if (d.craigSkillPoints) setCraigSkillPoints(d.craigSkillPoints);
+      if (d.craigBonusPoints != null) setCraigBonusPoints(d.craigBonusPoints);
+      if (d.brianSkillPoints) setBrianSkillPoints(d.brianSkillPoints);
+      if (d.brianBonusPoints != null) setBrianBonusPoints(d.brianBonusPoints);
+      if (d.adamActiveClasses)  setAdamActiveClasses(d.adamActiveClasses);
+      if (d.craigActiveClasses) setCraigActiveClasses(d.craigActiveClasses);
+      if (d.brianActiveClasses) setBrianActiveClasses(d.brianActiveClasses);
+      setTimeout(() => { _fbSyncing.current = false; }, 600);
+    });
+    return () => { if (_fbRef.current) _fbRef.current.off(); };
+  }, []);
+
+  useEffect(() => {
+    if (!window._fbDb || _fbSyncing.current) return;
+    clearTimeout(_fbTimer.current);
+    _fbTimer.current = setTimeout(() => {
+      window._fbDb.ref('/characterSheet').set({
+        sheets, adamSkillPoints, adamBonusPoints,
+        craigSkillPoints, craigBonusPoints,
+        brianSkillPoints, brianBonusPoints,
+        adamActiveClasses, craigActiveClasses, brianActiveClasses,
+      }).catch(e => console.warn('FB sheet write', e));
+    }, 400);
+  }, [sheets, adamSkillPoints, adamBonusPoints, craigSkillPoints, craigBonusPoints, brianSkillPoints, brianBonusPoints, adamActiveClasses, craigActiveClasses, brianActiveClasses]);
 
   // Flash "Saved" indicator on any change
   const flashTimer = useRef(null);

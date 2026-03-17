@@ -15,9 +15,21 @@
     ::-webkit-scrollbar-thumb{background:#2a2a4a;border-radius:3px}
     ::-webkit-scrollbar-thumb:hover{background:#4a4a7a}
   </style>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
 <div id="root"></div>
+<script>
+window._fbDb = null;
+(function(){
+  try {
+    var cfg={apiKey:"AIzaSyDWPAf3783eIjEwYj-qbFSyiJSZ49E3oZg",authDomain:"the-boyz-rpg-game.firebaseapp.com",databaseURL:"https://the-boyz-rpg-game-default-rtdb.firebaseio.com",projectId:"the-boyz-rpg-game",storageBucket:"the-boyz-rpg-game.firebasestorage.app",messagingSenderId:"841803624391",appId:"1:841803624391:web:51d8e1912b6a79b08873e2"};
+    var app=(firebase.apps&&firebase.apps.length)?firebase.app():firebase.initializeApp(cfg);
+    window._fbDb=firebase.database(app);
+  }catch(e){console.warn('Firebase unavailable',e);}
+})();
+</script>
 <script type="text/babel">
 const {useState, useEffect, useRef} = React;
 
@@ -32,8 +44,8 @@ const ENG_SUBS      = ['Armor','Automatons','Explosives','Gadgets','Prosthetics'
 const ENG_ARMOR_SLOTS = ['Head','Body','Hands','Feet','Waist','Back / Shoulders'];
 const ALL_CONDITIONS_ENG = ['Burning','Melting','Frostbite','Radiated','Afflicted','Electrocuted','Infected','Hexed','Bleeding','Shocked','Dazed','Stunned','Asleep','Poisoned','Charmed','Seized','Taunted','Blind','Gut Punched','Feared','Enraged','Concealed','Confused','Deafened','Silenced','Fatigued','Immobilized','Paralyzed','Disarmed','Grappled','Flying','Sundered'];
 const DAMAGE_TYPES_ENG  = ['Blunt','Cleaving','Piercing/Slashing','Acid','Arcane','Fire','Frost','Light','Lightning','Nature','Poison','Shadow'];
-const TOP_TABS      = ['Weapons','Armor','Engineering','Jewelry','Charms','Alchemy','Blacksmithing','Gems','Scrolls','Books','Clothing','Food','Junk'];
-const TOP_ICONS     = {Weapons:'⚔',Armor:'🛡',Engineering:'⚙',Jewelry:'💍',Charms:'🪬',Alchemy:'⚗',Blacksmithing:'⚒',Gems:'💎',Scrolls:'📜',Books:'📖',Clothing:'👘',Food:'🍖',Junk:'🗑'};
+const TOP_TABS      = ['Weapons','Armor','Engineering','Jewelry','Charms','Alchemy','Blacksmithing','Gems','Scrolls','Books','Clothing','Food','Gear','Body Parts','Junk'];
+const TOP_ICONS     = {Weapons:'⚔',Armor:'🛡',Engineering:'⚙',Jewelry:'💍',Charms:'🪬',Alchemy:'⚗',Blacksmithing:'⚒',Gems:'💎',Scrolls:'📜',Books:'📖',Clothing:'👘',Food:'🍖',Gear:'🎒','Body Parts':'🦴',Junk:'🗑'};
 
 const BORDER    = '#2a2a4a';
 const GOLD      = '#c9a227';
@@ -135,23 +147,23 @@ const DEFAULT_ITEMS = [
   {id:'default_alchemy_lesser_strength_potion',name:'Potion of Lesser Strength',category:'Alchemy',subcategory:'Potions',slot:'',
     image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'30',
     traits:'',description:'A murky amber vial that smells of iron and bark. Drinking it feels like swallowing a fistful of gravel. The effect is immediate and uncomfortable.',
-    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'Increases Strength by 20 for 3 rounds. Consumed on use.',gemBonus:'',foodEffect:'',materialArmPct:''},
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'Increases Strength by 20 for 30 seconds. Consumed on use.',gemBonus:'',foodEffect:'',materialArmPct:''},
   {id:'default_alchemy_lesser_agility_potion',name:'Potion of Lesser Agility',category:'Alchemy',subcategory:'Potions',slot:'',
     image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'30',
     traits:'',description:'A thin, pale-green liquid that tastes like pine needles and something faintly electric. Your fingers feel quicker before you set the vial down.',
-    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'Increases Agility by 20 for 3 rounds. Consumed on use.',gemBonus:'',foodEffect:'',materialArmPct:''},
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'Increases Agility by 20 for 30 seconds. Consumed on use.',gemBonus:'',foodEffect:'',materialArmPct:''},
   {id:'default_alchemy_lesser_speed_potion',name:'Potion of Lesser Speed',category:'Alchemy',subcategory:'Potions',slot:'',
     image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'30',
     traits:'',description:'A nearly clear vial with a faint shimmer, like heat rising off stone. Bitter going down, then nothing — until you move.',
-    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'Increases Speed by 20 for 3 rounds. Consumed on use.',gemBonus:'',foodEffect:'',materialArmPct:''},
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'Increases Speed by 20 for 30 seconds. Consumed on use.',gemBonus:'',foodEffect:'',materialArmPct:''},
   {id:'default_alchemy_lesser_cunning_potion',name:'Potion of Lesser Cunning',category:'Alchemy',subcategory:'Potions',slot:'',
     image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'30',
     traits:'',description:'A dark, oily vial that smells of anise and old smoke. It leaves your thoughts sharper and your conscience temporarily quieter.',
-    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'Increases Cunning by 20 for 3 rounds. Consumed on use.',gemBonus:'',foodEffect:'',materialArmPct:''},
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'Increases Cunning by 20 for 30 seconds. Consumed on use.',gemBonus:'',foodEffect:'',materialArmPct:''},
   {id:'default_alchemy_lesser_willpower_potion',name:'Potion of Lesser Willpower',category:'Alchemy',subcategory:'Potions',slot:'',
     image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'30',
     traits:'',description:'A deep violet liquid that smells faintly of incense and burnt hair. It tastes like nothing, which is somehow worse. The mind steadies almost immediately.',
-    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'Increases Willpower by 20 for 3 rounds. Consumed on use.',gemBonus:'',foodEffect:'',materialArmPct:''},
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'Increases Willpower by 20 for 30 seconds. Consumed on use.',gemBonus:'',foodEffect:'',materialArmPct:''},
   {id:'default_food_bruised_apple',name:'Bruised Apple',category:'Food',subcategory:'',slot:'',
     image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'',value:'1',
     traits:'',description:'Soft on one side but edible. Faintly sweet.',
@@ -1104,6 +1116,540 @@ const DEFAULT_ITEMS = [
     image:'',rarity:'Legendary',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'',value:'32',
     traits:'',description:'The finest magical cloth known. Soft, weightless, and suffused with light affinity. Nearly impossible to source outside of major cities.',
     minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:'200%',materialDmgPct:'',materialDefSlot:'Light +1.5',materialUtilSlot:'Intelligence +1.0, Willpower +1.0',materialOffSlot:''},
+  // ── RINGS ────────────────────────────────────────────────────────────────────
+  {id:'default_ring_tarnished_loop',name:'Tarnished Loop',category:'Jewelry',subcategory:'Rings',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'40',
+    traits:'+3 Attack Rating',
+    description:'A dull iron band worn smooth on the inside. Nothing special, but it gives the knuckle a fighting edge.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_ring_stonebinders_band',name:"Stonebinder's Band",category:'Jewelry',subcategory:'Rings',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'50',
+    traits:'+3 Defense | +5 Blunt Resistance',
+    description:'A wide grey band carved from river stone and reinforced with a thin copper inlay. Sold by traveling merchants near quarries.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_ring_foxring',name:'Foxring',category:'Jewelry',subcategory:'Rings',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'120',
+    traits:'+2 Agility | +2 Cunning | +2 Stealth',
+    description:'A slender silver ring engraved with a running fox. Popular among thieves and scouts who can actually get their hands on one.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_ring_band_of_the_bulwark',name:'Band of the Bulwark',category:'Jewelry',subcategory:'Rings',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'150',
+    traits:'+20 Health | +5 Blunt Resistance',
+    description:'A thick iron ring etched with overlapping shield motifs. Favored by soldiers who have taken one too many hits to the ribs.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_ring_ember_coil',name:'Ember Coil',category:'Jewelry',subcategory:'Rings',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'130',
+    traits:'+10 Fire Resistance | Immune to Burning',
+    description:'A ring of black iron with a coiled band that faintly radiates warmth. Said to have been quenched in volcanic runoff.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_ring_scholiasts_ring',name:"Scholiast's Ring",category:'Jewelry',subcategory:'Rings',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'140',
+    traits:'+2 Intelligence | +2 Willpower',
+    description:'A plain gold band inlaid with tiny text too small to read. The inscription supposedly holds a short theorem. Most agree this is pretentious.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_ring_vein_drinker',name:'Vein-Drinker',category:'Jewelry',subcategory:'Rings',slot:'',
+    image:'',rarity:'Rare',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'400',
+    traits:'+3 Strength | +5 Attack Rating | 20% chance to heal 15% on hit main hand',
+    description:'A dark red band set with a cracked garnet that looks uncomfortably like a bloodshot eye. Warm to the touch.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_ring_pale_ward',name:'Pale Ward',category:'Jewelry',subcategory:'Rings',slot:'',
+    image:'',rarity:'Rare',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'350',
+    traits:'+15 Frost Resistance | +15 Shadow Resistance | Immune to Frostbite',
+    description:'A ring of bleached bone fitted with a milky white stone. Cold to the touch regardless of weather. Recovered from a collapsed frost tomb.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_ring_conduit_ring',name:'Conduit Ring',category:'Jewelry',subcategory:'Rings',slot:'',
+    image:'',rarity:'Rare',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'500',
+    traits:'+3 Intelligence | +3 Willpower | +10 Magic Attack | +5 Spell Critical Chance',
+    description:'A silver band wrapped in hairline filaments of copper that trace spell-circuit patterns. Pulls ambient arcane energy toward the caster.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_ring_wraithband',name:'Wraithband',category:'Jewelry',subcategory:'Rings',slot:'',
+    image:'',rarity:'Legendary',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'1200',
+    traits:'+3 Agility | +3 Cunning | +3 Intelligence | +10 Defense | +10 Critical Hit Damage | +10 Flanking Damage | Immune to Shocked | 20% chance to cause Blind 3 seconds main hand',
+    description:'A near-weightless band of shadowed silver that seems to shift between fingers. Those who wear it report feeling just slightly ahead of where they should be.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+
+  // ── BODY PARTS ───────────────────────────────────────────────────────────────
+
+  // — Human / Generic Bones —
+  {id:'default_bp_skull',name:'Skull',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'1',value:'3',
+    traits:'',description:'A human skull, empty-eyed and yellowed. Teeth mostly intact.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_jaw_bone',name:'Jaw Bone',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'1',
+    traits:'',description:'A detached jaw bone with a few teeth still rooted in the socket.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_finger_bone',name:'Finger Bone',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'1',
+    traits:'',description:'A small phalange. Lightweight. Comes in sets of ten if you look hard enough.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_toe_bone',name:'Toe Bone',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'1',
+    traits:'',description:'Even smaller than a finger bone. Hard to find a use for.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_rib_bone',name:'Rib Bone',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'1',
+    traits:'',description:'A curved rib, slightly flexible. Hollow toward one end.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_vertebrae',name:'Vertebrae',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'1',
+    traits:'',description:'A single spinal vertebra with the hollow core intact. Alchemists occasionally have uses for these.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_femur',name:'Femur',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.8',value:'2',
+    traits:'',description:'The largest bone in the body. Dense, heavy, and durable. Makes a serviceable club in a pinch.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_tibia',name:'Tibia',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.4',value:'1',
+    traits:'',description:'The shin bone. Long and slightly flattened. Snaps cleanly.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_humerus',name:'Humerus',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.4',value:'1',
+    traits:'',description:'The upper arm bone. Nothing funny about it.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_shoulder_blade',name:'Shoulder Blade',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'1',
+    traits:'',description:'A flat triangular scapula. Thin enough to be translucent at the edges.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_sternum',name:'Sternum',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'1',
+    traits:'',description:'The flat breastbone with remnants of cartilage along the sides where ribs once attached.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_teeth',name:'Teeth',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'1',
+    traits:'',description:'A handful of loose human teeth. Dentists use them for study. Collectors use them for other things.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_knuckle_bone',name:'Knuckle Bone',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'1',
+    traits:'',description:'Small, rounded, and smooth. Gamblers carve them into dice. Shamans read fortunes from them.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_pelvis',name:'Pelvis',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.7',value:'1',
+    traits:'',description:'The basin-shaped hip bone. Awkward to carry. Harder to explain.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+
+  // — Animal Bones & Hard Parts —
+  {id:'default_bp_animal_skull',name:'Animal Skull',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.8',value:'3',
+    traits:'',description:'A beast skull of indeterminate origin. Eye sockets large, teeth worn flat.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_wolf_fang',name:'Wolf Fang',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'4',
+    traits:'',description:'A long canine tooth from a wolf, tapered and slightly curved. Still sharp at the tip.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_bear_claw',name:'Bear Claw',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'5',
+    traits:'',description:'A thick curved claw from a bear. Hard as horn and nearly as long as a finger.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_eagle_talon',name:'Eagle Talon',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'4',
+    traits:'',description:'A hooked raptor talon, black and needle-sharp. Fetches a decent price from fletchers.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_serpent_fang',name:'Serpent Fang',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'12',
+    traits:'',description:'A hollow venom fang from a large serpent. The canal is still intact. Handle with care.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_crocodile_tooth',name:'Crocodile Tooth',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'5',
+    traits:'',description:'A conical tooth from a river crocodile. Thick at the base, brutally pointed at the tip.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_boar_tusk',name:'Boar Tusk',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'6',
+    traits:'',description:'A curved ivory tusk from a wild boar. Scored along the outer edge from years of use.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_deer_antler',name:'Deer Antler',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.6',value:'5',
+    traits:'',description:'A shed antler from a stag, branched and solid. Carvers prize these for handles and tools.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_ram_horn',name:'Ram Horn',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'5',
+    traits:'',description:'A spiraling horn from a mountain ram. Dense and hollow at the core. Blown as a horn or shaped into a cup.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_ox_horn',name:'Ox Horn',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.6',value:'4',
+    traits:'',description:'A long straight ox horn, smooth and dark. Used for powder horns, cups, and carving.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_hoof',name:'Hoof',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.4',value:'2',
+    traits:'',description:'A detached cloven hoof, dry and hard. Smiths sometimes render them for adhesive.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_beak',name:'Beak',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'3',
+    traits:'',description:'A large hooked beak from a bird of prey. Lightweight and surprisingly hard.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_stinger',name:'Stinger',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'10',
+    traits:'',description:'The barbed tail stinger from a large insectoid creature. The tip still holds trace venom.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_chitin_plate',name:'Chitin Plate',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'4',
+    traits:'',description:'A curved plate of insect chitin from the carapace of a large arthropod. Lightweight and surprisingly tough.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_carapace_shard',name:'Carapace Shard',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'3',
+    traits:'',description:'A broken fragment of hardened exoskeleton. Edges are sharp enough to draw blood.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_scale',name:'Scale',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'2',
+    traits:'',description:'A single reptile scale, iridescent and hard. Larger creatures yield larger scales.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_feather',name:'Feather',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.01',value:'1',
+    traits:'',description:'A large flight feather, still flexible along the quill. Fletchers pay well for clean ones.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_quill',name:'Quill',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.02',value:'2',
+    traits:'',description:'A barbed spine from a porcupine or similar creature. Sharp enough to serve as a needle.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_wing_membrane',name:'Wing Membrane',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'8',
+    traits:'',description:'A thin leathery sheet of wing skin from a bat or similar creature. Translucent when held to light.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_tentacle',name:'Tentacle',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'7',
+    traits:'',description:'A severed appendage from a cephalopod or sea creature. The suckers are still faintly adhesive.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_fin',name:'Fin',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'2',
+    traits:'',description:'A dried fish fin. The cartilage renders down into a useful adhesive. Used in some cuisines.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_hide_scrap',name:'Hide Scrap',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'2',
+    traits:'',description:'A torn section of animal hide, too small for armor but useful as patches or tinder.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_pelt',name:'Pelt',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'1',value:'10',
+    traits:'',description:'A full animal pelt, fur intact and reasonably clean. Value depends heavily on the creature it came from.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_tail_tuft',name:'Tail Tuft',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'2',
+    traits:'',description:'The bushy tip of an animal tail, still fluffy. Decorative, mostly.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_mane',name:'Mane',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'3',
+    traits:'',description:'A coarse bundle of mane hair, still attached to a strip of neck hide. Long and coarse.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+
+  // — Organs —
+  {id:'default_bp_heart',name:'Heart',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.4',value:'5',
+    traits:'',description:'A preserved animal or humanoid heart. Still faintly warm if recently removed. Alchemists have uses for it.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_liver',name:'Liver',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'4',
+    traits:'',description:'Dark and lobed. The liver filters toxins in life — in death it is a common alchemical component.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_kidney',name:'Kidney',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'3',
+    traits:'',description:'Bean-shaped and firm. Usually comes in pairs. Used in certain restorative tinctures.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_lung',name:'Lung',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.4',value:'3',
+    traits:'',description:'Spongy and pale. Collapses flat when removed. Smoke alchemists value these for filtration experiments.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_brain',name:'Brain',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.4',value:'10',
+    traits:'',description:'Soft, grey, and deeply folded. Some arcane rituals call for it. Some cooks do too.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_eyeball',name:'Eyeball',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'4',
+    traits:'',description:'Whole and intact, the optic nerve still dangling. Divination rituals often call for these.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_tongue',name:'Tongue',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'3',
+    traits:'',description:'A preserved tongue, salted and dried. Used in certain charm-making and binding rituals.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_stomach',name:'Stomach',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'2',
+    traits:'',description:'A tough muscular sac. Once emptied and cleaned it makes a reasonable watertight container.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_spleen',name:'Spleen',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'2',
+    traits:'',description:'Soft, dark purple, and fragile. Rarely called for but occasionally necessary.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_gallbladder',name:'Gallbladder',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'4',
+    traits:'',description:'A small membranous sac filled with bile. Bitter to an extreme. Bear gallbladders fetch good prices from certain merchants.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_venom_sac',name:'Venom Sac',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'18',
+    traits:'',description:'An intact venom gland removed from a venomous creature. The sac is still full. Do not puncture.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_bile_sac',name:'Bile Sac',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'5',
+    traits:'',description:'A secondary digestive gland found in certain large beasts. The concentrated fluid inside is highly acidic.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_gizzard',name:'Gizzard',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'2',
+    traits:'',description:'The muscular grinding stomach of a bird or reptile. Thick-walled and tough.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_animal_eye',name:'Animal Eye',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'3',
+    traits:'',description:'The eye of a beast, glazed over but structurally intact. The pupil shape varies by species.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+
+  // — Severed Parts —
+  {id:'default_bp_severed_finger',name:'Severed Finger',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'2',
+    traits:'',description:'Someone\'s finger. Clean cut at the base knuckle. The ring it once wore is not here.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_severed_thumb',name:'Severed Thumb',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'2',
+    traits:'',description:'A severed thumb. Thieves\' guilds in some cities collect these as proof of work done.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_severed_toe',name:'Severed Toe',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'1',
+    traits:'',description:'Smaller than a finger. Equally unpleasant to find in your pack.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_severed_ear',name:'Severed Ear',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.05',value:'2',
+    traits:'',description:'A human ear, sliced cleanly. Bounty hunters sometimes present these instead of full heads.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_severed_hand',name:'Severed Hand',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'5',
+    traits:'',description:'A full hand, severed at the wrist. The fingers are still loosely curled.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_severed_foot',name:'Severed Foot',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.4',value:'5',
+    traits:'',description:'A foot cut cleanly above the ankle. The sole is calloused.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_severed_arm',name:'Severed Arm',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'2',value:'8',
+    traits:'',description:'A full arm from shoulder to fingertip. Heavy and awkward to transport. Most just take the hand.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_severed_leg',name:'Severed Leg',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'4',value:'8',
+    traits:'',description:'A full leg from hip to foot. Impractical to carry. Someone did anyway.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_severed_head',name:'Severed Head',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'3',value:'15',
+    traits:'',description:'A severed humanoid head. The expression is frozen. Some bounties require the whole thing for positive identification.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_bp_severed_tail',name:'Severed Tail',category:'Body Parts',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'3',
+    traits:'',description:'The detached tail of a creature. Length and condition vary. Some are still twitching.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+
+  // ── TIDECALLER'S VESTMENTS (Elementalist Set) ────────────────────────────────
+  {id:'default_tidecallers_robe',name:"Tidecaller's Robe",category:'Armor',subcategory:'Cloth',slot:'Body',
+    image:'',rarity:'Uncommon',bluntRes:'3',cleavingRes:'3',piercingSlashingRes:'5',weight:'2',value:'80',
+    traits:'+1 Intelligence | +1 Willpower | +3 Magic Attack',
+    description:"A deep blue robe trimmed with wave patterns stitched in silver thread. Part of the Tidecaller\'s Vestments set.",
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_tidecallers_cowl',name:"Tidecaller's Cowl",category:'Armor',subcategory:'Cloth',slot:'Head',
+    image:'',rarity:'Uncommon',bluntRes:'2',cleavingRes:'2',piercingSlashingRes:'3',weight:'0.5',value:'50',
+    traits:'+1 Intelligence | +5 Spell Critical Chance',
+    description:"A close-fitting cloth cowl with a faint shimmer along the hem. Part of the Tidecaller\'s Vestments set.",
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_tidecallers_gloves',name:"Tidecaller's Gloves",category:'Armor',subcategory:'Cloth',slot:'Hands',
+    image:'',rarity:'Uncommon',bluntRes:'1',cleavingRes:'1',piercingSlashingRes:'2',weight:'0.5',value:'40',
+    traits:'+1 Willpower | +5 Spell Critical Damage',
+    description:"Thin cloth gloves reinforced at the fingertips with a light weave. Part of the Tidecaller\'s Vestments set.",
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_tidecallers_boots',name:"Tidecaller's Boots",category:'Armor',subcategory:'Cloth',slot:'Feet',
+    image:'',rarity:'Uncommon',bluntRes:'1',cleavingRes:'1',piercingSlashingRes:'2',weight:'1',value:'40',
+    traits:'+1 Intelligence | +3 Magic Attack',
+    description:"Soft cloth boots with a reinforced sole and wave-pattern stitching at the ankle. Part of the Tidecaller\'s Vestments set.",
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+
+  // ── GEAR ─────────────────────────────────────────────────────────────────────
+  {id:'default_gear_backpack',name:'Backpack',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'1',value:'5',
+    traits:'',description:'A sturdy canvas pack with two shoulder straps and a top handle. Standard issue for anyone heading out.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_bedroll',name:'Bedroll',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'2',value:'3',
+    traits:'',description:'A tightly rolled blanket and pad tied with a leather strap. Thin but better than bare ground.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_small_tent',name:'Small Tent',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'4',value:'15',
+    traits:'',description:'A one-person canvas shelter with a single wooden pole and rope pegs. Sets up in minutes.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_large_tent',name:'Large Tent',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'10',value:'35',
+    traits:'',description:'A four-person canvas tent with a ridgepole and side walls. Heavy to carry but comfortable to camp in.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_flint_and_steel',name:'Flint and Steel',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'2',
+    traits:'',description:'A chip of flint and a curved steel striker. Reliable fire-starting in dry conditions.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_torch',name:'Torch',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'1',
+    traits:'',description:'A wrapped bundle of pitch-soaked cloth on a wooden handle. Burns for roughly an hour.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_candle',name:'Candle',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'1',
+    traits:'',description:'A tallow candle with a braided wick. Poor light, but quiet and long-lasting.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_lantern',name:'Lantern',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'1',value:'8',
+    traits:'',description:'A hooded tin lantern with glass panels. Burns oil and casts a steady cone of light.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_toolset',name:'Toolset',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'3',value:'20',
+    traits:'',description:'A leather roll containing a small hammer, chisels, a hand drill, pliers, and assorted fasteners.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_flask',name:'Flask',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'2',
+    traits:'',description:'A flat tin flask with a screw cap. Fits neatly in a coat pocket. Holds about half a pint.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_waterskin',name:'Waterskin',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'3',
+    traits:'',description:'A cured leather bladder with a cork stopper. Holds about a quart of liquid.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_pouch',name:'Pouch',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'1',
+    traits:'',description:'A small drawstring bag of soft leather. Good for coins, herbs, or small sundries.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_sack',name:'Sack',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'1',
+    traits:'',description:'A rough burlap sack with a tie cord. Unglamorous but holds a lot.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_scroll_case',name:'Scroll Case',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'5',
+    traits:'',description:'A capped leather tube sized to hold rolled scrolls or maps. Keeps parchment dry.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_alchemist_kit',name:"Alchemist's Kit",category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'3',value:'30',
+    traits:'+2 Alchemy',description:'A padded case containing vials, a small burner, measuring spoons, and reagent holders. Everything needed for basic field alchemy.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_herb_case',name:'Herb Case',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'8',
+    traits:'',description:'A flat wooden case with small divided compartments and a latching lid. Keeps dried herbs and plant samples separated and fresh.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_small_chest',name:'Small Chest',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'5',value:'10',
+    traits:'',description:'A wooden chest with a hasp and padlock loop. Fits under a bed or in a saddlebag.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_large_chest',name:'Large Chest',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'15',value:'20',
+    traits:'',description:'An iron-banded wooden chest with a heavy lock. Not easy to carry but very hard to break into.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_rope_50ft',name:'Rope (50 ft.)',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'2',value:'4',
+    traits:'',description:'Fifty feet of twisted hemp rope. Strong enough to support a fully armored person.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_grappling_hook',name:'Grappling Hook',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'1',value:'6',
+    traits:'',description:'A four-pronged iron hook tied to a short length of chain. Throw it, hope it catches.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_crowbar',name:'Crowbar',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'2',value:'3',
+    traits:'',description:'A heavy iron pry bar with a forked tip. Good for doors, crates, and getting into things that are not meant to be opened.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_hammer_and_pitons',name:'Hammer and Pitons',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'1.5',value:'5',
+    traits:'',description:'A short iron hammer and a set of ten iron pitons. Essential for climbing or securing ropes to stone.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_shovel',name:'Shovel',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'3',value:'4',
+    traits:'',description:'A flat-bladed iron shovel with a long wooden handle. Digs graves as easily as campsites.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_hand_mirror',name:'Hand Mirror',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'5',
+    traits:'',description:'A polished steel mirror in a small wooden frame. Useful for signaling, checking blind corners, or confirming you survived.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_spyglass',name:'Spyglass',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'40',
+    traits:'+2 Search',description:'A brass-collared optical tube that extends to three sections. Brings distant targets into sharp focus.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_compass',name:'Compass',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'15',
+    traits:'+2 Survival',description:'A brass compass with a floating needle and a rotating bezel. Useless underground, invaluable everywhere else.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_map_case',name:'Map Case',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'6',
+    traits:'',description:'A waxed leather tube with a cap and shoulder strap. Keeps maps and charts flat and dry.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_ink_and_quill',name:'Ink and Quill',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'3',
+    traits:'',description:'A stoppered vial of black ink and a trimmed goose feather quill. Enough ink for several pages of writing.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_whetstone',name:'Whetstone',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'2',
+    traits:'',description:'A fine-grit sharpening stone in a leather sleeve. A blade that is kept sharp rarely lets you down.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_oil_flask',name:'Oil Flask',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'2',
+    traits:'',description:'A sealed clay flask of lamp oil. Fuels a lantern for several hours or makes an effective fire hazard.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_bear_trap',name:'Bear Trap',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'3',value:'10',
+    traits:'',description:'A heavy iron spring trap with serrated jaws. Set it, hide it, and wait. The spring is strong enough to hold a grown man.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_fishing_kit',name:'Fishing Kit',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'5',
+    traits:'',description:'A small wooden spool of line, a set of hooks, and a few split-shot weights in a tin box.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_hunting_snare',name:'Hunting Snare',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'2',
+    traits:'',description:'A braided wire loop on a stake. Set along a game trail and check it in the morning.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_signal_horn',name:'Signal Horn',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'8',
+    traits:'',description:'A carved animal horn with a mouthpiece. Produces a loud, carrying note audible at considerable distance.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_manacles',name:'Manacles',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'1',value:'8',
+    traits:'',description:'Iron wrist shackles with a short chain and a keyed lock. Standard restraint issue.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_lockpicks',name:'Lockpicks',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.1',value:'20',
+    traits:'+2 Security',description:'A slim leather roll containing a tension wrench and six picks of varying gauge. Illegal in most jurisdictions.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_disguise_kit',name:'Disguise Kit',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'1',value:'25',
+    traits:'+2 Forgery',description:'A compact case containing greasepaint, false hair, spirit gum, and a set of small putty shapers. Enough to pass as someone else at a distance.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_bandages',name:'Bandages',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'3',
+    traits:'',description:'A roll of clean linen strips. Stops bleeding and keeps wounds covered. A traveler should never be without them.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_field_surgery_kit',name:'Field Surgery Kit',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'1.5',value:'35',
+    traits:'+2 Medical',description:'A leather roll containing a bone saw, forceps, suture needle, gut thread, and a small bottle of spirits. For when bandages are not enough.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_sewing_kit',name:'Sewing Kit',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'3',
+    traits:'',description:'A small tin containing needles, a spool of waxed thread, and a thimble. Repairs torn clothing and gear in the field.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_cooking_pot',name:'Cooking Pot',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'2',value:'5',
+    traits:'',description:'A cast iron pot with a bale handle and a lid. Hangs over a campfire or sits directly in coals.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_mess_kit',name:'Mess Kit',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'4',
+    traits:'',description:'A nested tin plate, cup, and fork-spoon combo that stacks flat. The soldier\'s answer to fine dining.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_field_rations',name:'Field Rations (1 Day)',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'1',value:'2',
+    traits:'',description:'Hardtack, dried meat, and a small portion of salted nuts wrapped in cloth. Tasteless, but it keeps.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_climbers_kit',name:"Climber's Kit",category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'3',value:'25',
+    traits:'+2 Athletics',description:'A harness, chalk bag, and a set of carved hand-holds on short cords. Makes vertical surfaces considerably less fatal.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_writing_journal',name:'Writing Journal',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'4',
+    traits:'',description:'A leather-bound book of blank pages with a strap closure. Holds notes, maps, sketches, and half-formed plans.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_hourglass',name:'Hourglass',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Common',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.3',value:'10',
+    traits:'',description:'A small sand-filled glass that measures one hour per turn. Useful for timed watches and timing a distraction.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_thieves_tools_advanced',name:"Thieves' Tools (Advanced)",category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Rare',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.2',value:'80',
+    traits:'+4 Security',description:'A masterwork set of picks, bypass tools, and a tension bar made from tempered steel. Opens most locks without leaving a mark.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_survey_tools',name:'Survey Tools',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'2',value:'30',
+    traits:'+2 Search',description:'A plumb bob, measuring chain, folding ruler, and a small spirit level in a canvas roll. Used for mapping and structural assessment.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+  {id:'default_gear_poison_kit',name:'Poison Kit',category:'Gear',subcategory:'',slot:'',
+    image:'',rarity:'Uncommon',bluntRes:'',cleavingRes:'',piercingSlashingRes:'',weight:'0.5',value:'35',
+    traits:'+2 Alchemy',description:'A sealed wooden case containing small applicator brushes, a mixing stylus, and a set of corked vials with residue of various compounds. Make of that what you will.',
+    minDmg:'',maxDmg:'',weaponType:'Melee',handedness:'Either',strReq:'',agiReq:'',wilReq:'',defenseMod:'',hitSound:'',missSound:'',effect:'',gemBonus:'',foodEffect:'',materialArmPct:''},
+
 ];
 
 function loadDB(){
@@ -1423,7 +1969,7 @@ function ItemModal({initItem,onSave,onClose}){
   }
   const subOptions=getSubOptions();
   const showSubDrop=subOptions.length>0;
-  const showArmorMat=cat==='Armor'||cat==='Clothing';
+  const showArmorMat=cat==='Armor';
   const showEngArmorSlot=cat==='Engineering'&&item.subcategory==='Armor';
 
   return (
@@ -1444,7 +1990,7 @@ function ItemModal({initItem,onSave,onClose}){
               var sub='',slot='';
               if(c==='Weapons') sub=WEAPON_SUBS[0];
               else if(c==='Armor'){sub=ARMOR_MATS[0];slot=ARMOR_SLOTS[0];}
-              else if(c==='Clothing'){sub=ARMOR_MATS[0];slot=ARMOR_SLOTS[0];}
+              else if(c==='Clothing'){slot=ARMOR_SLOTS[0];}
               else if(c==='Jewelry') sub=JEWELRY_SUBS[0];
               else if(c==='Alchemy') sub=ALCHEMY_SUBS[0];
               else if(c==='Blacksmithing') sub=BS_SUBS[0];
@@ -1481,6 +2027,14 @@ function ItemModal({initItem,onSave,onClose}){
                   {ARMOR_SLOTS.map(function(s){return <option key={s}>{s}</option>;})}
                 </select>
               </div>
+            </div>
+          )}
+          {cat==='Clothing'&&(
+            <div>
+              <label style={fLabel}>SLOT</label>
+              <select value={item.slot} onChange={function(e){set('slot',e.target.value);}} style={iBase}>
+                {ARMOR_SLOTS.map(function(s){return <option key={s}>{s}</option>;})}
+              </select>
             </div>
           )}
           {showEngArmorSlot&&(
@@ -1616,7 +2170,7 @@ function ItemModal({initItem,onSave,onClose}){
               </div>
             </div>
           )}
-          {(cat==='Armor'||cat==='Clothing')&&(item.subcategory==='Metal'||item.subcategory==='Leather')&&(
+          {cat==='Armor'&&(item.subcategory==='Metal'||item.subcategory==='Leather')&&(
             <div>
               <label style={fLabel}>STR REQUIREMENT</label>
               <input type="number" value={item.strReq||''} onChange={function(e){set('strReq',e.target.value);}} placeholder="0" style={iBase}/>
@@ -2023,13 +2577,32 @@ function App(){
   const [subTab,setSubTab]      = useState(WEAPON_SUBS[0]);
   const [armorMat,setArmorMat]  = useState(ARMOR_MATS[0]);
   const [armorSlot,setArmorSlot]= useState(ARMOR_SLOTS[0]);
-  const [clothingMat,setClothingMat]  = useState(ARMOR_MATS[0]);
   const [clothingSlot,setClothingSlot]= useState(ARMOR_SLOTS[0]);
   const [modal,setModal]        = useState(null);
   const [giveModal,setGiveModal]= useState(null);
   const [search,setSearch]      = useState('');
   const [saved,setSaved]        = useState(false);
   const firstRun                = useRef(true);
+
+  const _fbTimer = useRef(null);
+  const _fbSyncing = useRef(false);
+
+  // Firebase: load custom items on mount
+  useEffect(function(){
+    if(!window._fbDb) return;
+    window._fbDb.ref('/itemDatabase').once('value').then(function(snap){
+      var d=snap.val();
+      if(!d||!Array.isArray(d)||!d.length) return;
+      try{
+        var ids=new Set(DEFAULT_ITEMS.map(function(i){return i.id;}));
+        var merged=DEFAULT_ITEMS.slice().concat(d.filter(function(i){return !ids.has(i.id);}));
+        _fbSyncing.current=true;
+        setItems(merged);
+        localStorage.setItem(LS_KEY,JSON.stringify(d));
+        setTimeout(function(){_fbSyncing.current=false;},600);
+      }catch(e){console.warn('FB item load error',e);}
+    });
+  },[]);
 
   useEffect(function(){
     if(firstRun.current){
@@ -2040,6 +2613,18 @@ function App(){
     saveToDB(items);
     setSaved(true);
     var t=setTimeout(function(){setSaved(false);},1500);
+    if(window._fbDb && !_fbSyncing.current){
+      clearTimeout(_fbTimer.current);
+      _fbTimer.current=setTimeout(function(){
+        var defIds=new Set(DEFAULT_ITEMS.map(function(i){return i.id;}));
+        var custom=items.filter(function(i){
+          if(!defIds.has(i.id)) return true;
+          var def=DEFAULT_ITEMS.find(function(d){return d.id===i.id;});
+          return def&&JSON.stringify(i)!==JSON.stringify(def);
+        });
+        window._fbDb.ref('/itemDatabase').set(custom).catch(function(e){console.warn('FB item write',e);});
+      },400);
+    }
     return function(){clearTimeout(t);};
   },[items]);
 
@@ -2047,7 +2632,7 @@ function App(){
     setTopTab(t); setSearch('');
     if(t==='Weapons') setSubTab(WEAPON_SUBS[0]);
     else if(t==='Armor'){setArmorMat(ARMOR_MATS[0]);setArmorSlot(ARMOR_SLOTS[0]);}
-    else if(t==='Clothing'){setClothingMat(ARMOR_MATS[0]);setClothingSlot(ARMOR_SLOTS[0]);}
+    else if(t==='Clothing'){setClothingSlot(ARMOR_SLOTS[0]);}
     else if(t==='Jewelry') setSubTab(JEWELRY_SUBS[0]);
     else if(t==='Alchemy') setSubTab(ALCHEMY_SUBS[0]);
     else if(t==='Blacksmithing') setSubTab(BS_SUBS[0]);
@@ -2064,7 +2649,7 @@ function App(){
       if(item.subcategory!==armorMat||item.slot!==armorSlot) return false;
     }
     if(topTab==='Clothing'){
-      if(item.subcategory!==clothingMat||item.slot!==clothingSlot) return false;
+      if(item.slot!==clothingSlot) return false;
     }
     if(topTab==='Engineering'&&subTab==='Armor'){
       if(item.slot&&item.slot!==armorSlot) return false;
@@ -2091,10 +2676,8 @@ function App(){
   ARMOR_MATS.forEach(function(m){amCounts[m]=countFor('Armor',m,'');});
   var asCounts={};
   ARMOR_SLOTS.forEach(function(s){asCounts[s]=countFor('Armor',armorMat,s);});
-  var clCounts={};
-  ARMOR_MATS.forEach(function(m){clCounts[m]=countFor('Clothing',m,'');});
   var clsCounts={};
-  ARMOR_SLOTS.forEach(function(s){clsCounts[s]=countFor('Clothing',clothingMat,s);});
+  ARMOR_SLOTS.forEach(function(s){clsCounts[s]=countFor('Clothing','',s);});
 
   var jCounts={};
   JEWELRY_SUBS.forEach(function(s){jCounts[s]=countFor('Jewelry',s,'');});
@@ -2109,7 +2692,7 @@ function App(){
     var sub='',slot='';
     if(topTab==='Weapons') sub=subTab;
     else if(topTab==='Armor'){sub=armorMat;slot=armorSlot;}
-    else if(topTab==='Clothing'){sub=clothingMat;slot=clothingSlot;}
+    else if(topTab==='Clothing'){slot=clothingSlot;}
     else if(topTab==='Jewelry'||topTab==='Alchemy'||topTab==='Blacksmithing'||topTab==='Engineering') sub=subTab;
     if(topTab==='Engineering'&&subTab==='Armor') slot=armorSlot;
     setModal(emptyItem(topTab,sub,slot));
@@ -2209,8 +2792,7 @@ function App(){
       {topTab==='Weapons'&&<SubTabBar tabs={WEAPON_SUBS} active={subTab} onChange={function(s){setSubTab(s);setSearch('');}} counts={wCounts} green={false}/>}
       {topTab==='Armor'&&<SubTabBar tabs={ARMOR_MATS} active={armorMat} onChange={function(m){setArmorMat(m);setArmorSlot(ARMOR_SLOTS[0]);setSearch('');}} counts={amCounts} green={false}/>}
       {topTab==='Armor'&&<SubTabBar tabs={ARMOR_SLOTS} active={armorSlot} onChange={function(s){setArmorSlot(s);setSearch('');}} counts={asCounts} green={true}/>}
-      {topTab==='Clothing'&&<SubTabBar tabs={ARMOR_MATS} active={clothingMat} onChange={function(m){setClothingMat(m);setClothingSlot(ARMOR_SLOTS[0]);setSearch('');}} counts={clCounts} green={false}/>}
-      {topTab==='Clothing'&&<SubTabBar tabs={ARMOR_SLOTS} active={clothingSlot} onChange={function(s){setClothingSlot(s);setSearch('');}} counts={clsCounts} green={true}/>}
+      {topTab==='Clothing'&&<SubTabBar tabs={ARMOR_SLOTS} active={clothingSlot} onChange={function(s){setClothingSlot(s);setSearch('');}} counts={clsCounts} green={false}/>}
       {topTab==='Jewelry'&&<SubTabBar tabs={JEWELRY_SUBS} active={subTab} onChange={function(s){setSubTab(s);setSearch('');}} counts={jCounts} green={false}/>}
       {topTab==='Alchemy'&&<SubTabBar tabs={ALCHEMY_SUBS} active={subTab} onChange={function(s){setSubTab(s);setSearch('');}} counts={alCounts} green={false}/>}
       {topTab==='Blacksmithing'&&<SubTabBar tabs={BS_SUBS} active={subTab} onChange={function(s){setSubTab(s);setSearch('');}} counts={bsCounts} green={false}/>}
