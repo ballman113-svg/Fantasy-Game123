@@ -2214,11 +2214,14 @@ function CharacterSheetView({ playerId, sheet, onUpdate, skillPoints, onSkillPoi
   // Keep localStorage + Firebase in sync when inventory changes
   React.useEffect(() => {
     try { localStorage.setItem('cs_inventory_'+playerId, JSON.stringify(inventory)); } catch {}
-    if (window._fbDb && !_invSyncing.current) {
+    if (window._fbDb) {
       clearTimeout(_invTimer.current);
+      _invSyncing.current = true;
       _invTimer.current = setTimeout(() => {
-        window._fbDb.ref('/inventory/'+playerId).set(inventory).catch(e=>console.warn('FB inv write',e));
-      }, 1000);
+        window._fbDb.ref('/inventory/'+playerId).set(inventory)
+          .then(() => { setTimeout(() => { _invSyncing.current = false; }, 300); })
+          .catch(e => { _invSyncing.current = false; console.warn('FB inv write',e); });
+      }, 400);
     }
   }, [inventory]);
 
