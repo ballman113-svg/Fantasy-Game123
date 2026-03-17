@@ -2860,6 +2860,14 @@ function App() {
   function fbRestore(val) {
     if (Array.isArray(val)) return val.map(fbRestore);
     if (val && typeof val === 'object') {
+      const keys = Object.keys(val);
+      // Firebase converts arrays to numeric-keyed objects — restore them
+      const isArr = keys.length > 0 && keys.every(k => /^\d+$/.test(k));
+      if (isArr) {
+        const arr = [];
+        keys.forEach(k => { arr[parseInt(k)] = fbRestore(val[k]); });
+        return arr;
+      }
       const out = {};
       for (const k in val) out[k.replace(/\|SLASH\|/g, '/')] = fbRestore(val[k]);
       return out;
