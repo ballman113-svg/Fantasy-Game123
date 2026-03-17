@@ -6,9 +6,9 @@
   "author": "ballman113-svg",
   "action": {
     "title": "Check Roller",
-    "icon": "/check_roller.html",
+    "icon": "https://ballman113-svg.github.io/Fantasy-Game123/check_roller.html",
     "popover": {
-      "url": "/check_roller.html",
+      "url": "https://ballman113-svg.github.io/Fantasy-Game123/check_roller.html",
       "height": 560,
       "width": 360
     }
