@@ -2164,6 +2164,7 @@ function CharacterSheetView({ playerId, sheet, onUpdate, skillPoints, onSkillPoi
   // Sync inventory from localStorage or Firebase
   const _invSyncing = React.useRef(false);
   const _invTimer   = React.useRef(null);
+  const _invFirstRun = React.useRef(true);
 
   const applyInv = React.useCallback((raw) => {
     try {
@@ -2213,6 +2214,7 @@ function CharacterSheetView({ playerId, sheet, onUpdate, skillPoints, onSkillPoi
 
   // Keep localStorage + Firebase in sync when inventory changes
   React.useEffect(() => {
+    if (_invFirstRun.current) { _invFirstRun.current = false; return; }
     try { localStorage.setItem('cs_inventory_'+playerId, JSON.stringify(inventory)); } catch {}
     if (window._fbDb) {
       _invSyncing.current = true;
