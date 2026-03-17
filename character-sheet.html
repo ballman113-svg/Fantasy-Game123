@@ -2157,7 +2157,7 @@ function CharacterSheetView({ playerId, sheet, onUpdate, skillPoints, onSkillPoi
       clearTimeout(_shardsTimer.current);
       _shardsTimer.current = setTimeout(() => {
         window._fbDb.ref('/shards/'+playerId).set(val).catch(e=>console.warn('FB shards write',e));
-      }, 400);
+      }, 1000);
     }
   }
 
@@ -2218,7 +2218,7 @@ function CharacterSheetView({ playerId, sheet, onUpdate, skillPoints, onSkillPoi
       clearTimeout(_invTimer.current);
       _invTimer.current = setTimeout(() => {
         window._fbDb.ref('/inventory/'+playerId).set(inventory).catch(e=>console.warn('FB inv write',e));
-      }, 400);
+      }, 1000);
     }
   }, [inventory]);
 
@@ -2542,50 +2542,57 @@ function App() {
   useEffect(() => { lsSet('cs_craigActiveClasses', craigActiveClasses); }, [craigActiveClasses]);
   useEffect(() => { lsSet('cs_brianActiveClasses', brianActiveClasses); }, [brianActiveClasses]);
 
-  // Firebase sync
-  const _fbRef = useRef(null);
-  const _fbTimer = useRef(null);
+  // Firebase sync — each key gets its own path to avoid browsers overwriting each other
   const _fbSyncing = useRef(false);
+  const _fbTimers  = useRef({});
 
-  useEffect(() => {
-    if (!window._fbDb) return;
-    _fbRef.current = window._fbDb.ref('/characterSheet');
-    _fbRef.current.on('value', snap => {
+  function fbListen(path, apply) {
+    if (!window._fbDb) return () => {};
+    const ref = window._fbDb.ref(path);
+    ref.on('value', snap => {
       if (_fbSyncing.current) return;
       const d = snap.val();
-      if (!d) return;
+      if (d == null) return;
       _fbSyncing.current = true;
-      if (d.sheets) setSheets(prev => ({
-        adam:  { ...prev.adam,  ...(d.sheets.adam  || {}) },
-        brian: { ...prev.brian, ...(d.sheets.brian || {}) },
-        craig: { ...prev.craig, ...(d.sheets.craig || {}) },
-      }));
-      if (d.adamSkillPoints)  setAdamSkillPoints(d.adamSkillPoints);
-      if (d.adamBonusPoints  != null) setAdamBonusPoints(d.adamBonusPoints);
-      if (d.craigSkillPoints) setCraigSkillPoints(d.craigSkillPoints);
-      if (d.craigBonusPoints != null) setCraigBonusPoints(d.craigBonusPoints);
-      if (d.brianSkillPoints) setBrianSkillPoints(d.brianSkillPoints);
-      if (d.brianBonusPoints != null) setBrianBonusPoints(d.brianBonusPoints);
-      if (d.adamActiveClasses)  setAdamActiveClasses(d.adamActiveClasses);
-      if (d.craigActiveClasses) setCraigActiveClasses(d.craigActiveClasses);
-      if (d.brianActiveClasses) setBrianActiveClasses(d.brianActiveClasses);
-      setTimeout(() => { _fbSyncing.current = false; }, 600);
+      apply(d);
+      setTimeout(() => { _fbSyncing.current = false; }, 800);
     });
-    return () => { if (_fbRef.current) _fbRef.current.off(); };
-  }, []);
+    return () => ref.off();
+  }
 
-  useEffect(() => {
+  function fbWrite(key, path, value) {
     if (!window._fbDb || _fbSyncing.current) return;
-    clearTimeout(_fbTimer.current);
-    _fbTimer.current = setTimeout(() => {
-      window._fbDb.ref('/characterSheet').set({
-        sheets, adamSkillPoints, adamBonusPoints,
-        craigSkillPoints, craigBonusPoints,
-        brianSkillPoints, brianBonusPoints,
-        adamActiveClasses, craigActiveClasses, brianActiveClasses,
-      }).catch(e => console.warn('FB sheet write', e));
-    }, 400);
-  }, [sheets, adamSkillPoints, adamBonusPoints, craigSkillPoints, craigBonusPoints, brianSkillPoints, brianBonusPoints, adamActiveClasses, craigActiveClasses, brianActiveClasses]);
+    clearTimeout(_fbTimers.current[key]);
+    _fbTimers.current[key] = setTimeout(() => {
+      window._fbDb.ref(path).set(value).catch(e => console.warn('FB write', path, e));
+    }, 1000);
+  }
+
+  useEffect(() => fbListen('/characterSheet/sheets', d => setSheets(prev => ({
+    adam:  { ...prev.adam,  ...(d.adam  || {}) },
+    brian: { ...prev.brian, ...(d.brian || {}) },
+    craig: { ...prev.craig, ...(d.craig || {}) },
+  }))), []);
+  useEffect(() => fbListen('/characterSheet/adamSkillPoints',  d => setAdamSkillPoints(d)),  []);
+  useEffect(() => fbListen('/characterSheet/adamBonusPoints',  d => setAdamBonusPoints(d)),  []);
+  useEffect(() => fbListen('/characterSheet/craigSkillPoints', d => setCraigSkillPoints(d)), []);
+  useEffect(() => fbListen('/characterSheet/craigBonusPoints', d => setCraigBonusPoints(d)), []);
+  useEffect(() => fbListen('/characterSheet/brianSkillPoints', d => setBrianSkillPoints(d)), []);
+  useEffect(() => fbListen('/characterSheet/brianBonusPoints', d => setBrianBonusPoints(d)), []);
+  useEffect(() => fbListen('/characterSheet/adamActiveClasses',  d => setAdamActiveClasses(d)),  []);
+  useEffect(() => fbListen('/characterSheet/craigActiveClasses', d => setCraigActiveClasses(d)), []);
+  useEffect(() => fbListen('/characterSheet/brianActiveClasses', d => setBrianActiveClasses(d)), []);
+
+  useEffect(() => { fbWrite('sheets',            '/characterSheet/sheets',            sheets);            }, [sheets]);
+  useEffect(() => { fbWrite('adamSP',            '/characterSheet/adamSkillPoints',   adamSkillPoints);   }, [adamSkillPoints]);
+  useEffect(() => { fbWrite('adamBP',            '/characterSheet/adamBonusPoints',   adamBonusPoints);   }, [adamBonusPoints]);
+  useEffect(() => { fbWrite('craigSP',           '/characterSheet/craigSkillPoints',  craigSkillPoints);  }, [craigSkillPoints]);
+  useEffect(() => { fbWrite('craigBP',           '/characterSheet/craigBonusPoints',  craigBonusPoints);  }, [craigBonusPoints]);
+  useEffect(() => { fbWrite('brianSP',           '/characterSheet/brianSkillPoints',  brianSkillPoints);  }, [brianSkillPoints]);
+  useEffect(() => { fbWrite('brianBP',           '/characterSheet/brianBonusPoints',  brianBonusPoints);  }, [brianBonusPoints]);
+  useEffect(() => { fbWrite('adamAC',            '/characterSheet/adamActiveClasses',  adamActiveClasses);  }, [adamActiveClasses]);
+  useEffect(() => { fbWrite('craigAC',           '/characterSheet/craigActiveClasses', craigActiveClasses); }, [craigActiveClasses]);
+  useEffect(() => { fbWrite('brianAC',           '/characterSheet/brianActiveClasses', brianActiveClasses); }, [brianActiveClasses]);
 
   // Flash "Saved" indicator on any change
   const flashTimer = useRef(null);
