@@ -2845,10 +2845,9 @@ function App() {
   useEffect(()=>{try{localStorage.setItem('cs_selectedEnvironment',JSON.stringify(selectedEnvironment));}catch{}},[selectedEnvironment]);
 
   // ── Firebase combat sync ──────────────────────────────────────────────────
-  const _fbCombatSyncing = useRef(false);
   const _fbCombatTimers  = useRef({});
+  const _fbCombatPending = useRef({}); // per-key write-pending flag
 
-  // Sanitize/restore forward slashes in object keys for Firebase
   function fbSanitize(val) {
     if (Array.isArray(val)) return val.map(fbSanitize);
     if (val && typeof val === 'object') {
@@ -2872,7 +2871,10 @@ function App() {
     if (!window._fbDb) return;
     clearTimeout(_fbCombatTimers.current[key]);
     _fbCombatTimers.current[key] = setTimeout(() => {
-      window._fbDb.ref('/combat/' + key).set(fbSanitize(value)).catch(e => console.warn('FB combat write', key, e));
+      _fbCombatPending.current[key] = true;
+      window._fbDb.ref('/combat/' + key).set(fbSanitize(value))
+        .then(() => { setTimeout(() => { _fbCombatPending.current[key] = false; }, 300); })
+        .catch(e => { _fbCombatPending.current[key] = false; console.warn('FB combat write', key, e); });
     }, debounce);
   }
 
@@ -2883,12 +2885,10 @@ function App() {
     const listen = (key, apply, allowNull=false) => {
       const ref = window._fbDb.ref('/combat/' + key);
       ref.on('value', snap => {
-        if (_fbCombatSyncing.current) return;
+        if (_fbCombatPending.current[key]) return; // skip our own echo
         const raw = snap.val();
         if (raw == null && !allowNull) return;
-        _fbCombatSyncing.current = true;
         apply(raw == null ? null : fbRestore(raw));
-        setTimeout(() => { _fbCombatSyncing.current = false; }, 500);
       });
       refs.push(ref);
     };
@@ -2900,6 +2900,7 @@ function App() {
     listen('round',        d => { if (d != null) setRound(d); });
     listen('log',          d => { if (d != null) setLog(d); });
     listen('step',         d => { if (d != null) setStep(d); });
+    listen('combatElapsed', d => { if (d != null) { combatElapsedRef.current = d; setCombatElapsed(d); } });
     return () => refs.forEach(r => r.off());
   }, []);
 
@@ -2912,6 +2913,7 @@ function App() {
   useEffect(() => { fbCombatWrite('round',        round,        0);   }, [round]);
   useEffect(() => { fbCombatWrite('log',          log,          300); }, [log]);
   useEffect(() => { fbCombatWrite('step',         step,         0);   }, [step]);
+  useEffect(() => { fbCombatWrite('combatElapsed', combatElapsed, 500); }, [combatElapsed]);
   // ─────────────────────────────────────────────────────────────────────────
 
   // Single interval: runs only during combat, handles timer + turn activation + DoT ticks
