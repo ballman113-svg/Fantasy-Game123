@@ -16,6 +16,7 @@
   </style>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="https://unpkg.com/@owlbear-rodeo/sdk@latest/dist/owlbear-rodeo.min.js"></script>
 </head>
 <body>
   <div id="root"></div>
@@ -2821,7 +2822,9 @@ function App() {
   const [isGM, setIsGM] = useState(false);
   useEffect(() => {
     if (typeof OBR !== 'undefined') {
-      OBR.player.getRole().then(role => setIsGM(role === 'GM'));
+      OBR.onReady(() => {
+        OBR.player.getRole().then(role => setIsGM(role === 'GM'));
+      });
     } else {
       setIsGM(new URLSearchParams(window.location.search).get('gm') === '1');
     }
@@ -2967,7 +2970,7 @@ function App() {
   }, [phase, combatants]);
 
   // Write combat state to Firebase on change — GM only
-  useEffect(() => { if (!isGM) return; fbCombatWrite('phase',        phase,        0);   }, [phase]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('phase',        phase,        0);   }, [phase, isGM]);
   useEffect(() => {
     if (!window._fbDb || !isGM) return;
     clearTimeout(_fbCombatTimers.current['combatants']);
@@ -2986,14 +2989,14 @@ function App() {
           console.warn('FB combatants write', e); 
         });
     }, 300);
-  }, [combatants]);
-  useEffect(() => { if (!isGM) return; fbCombatWrite('order',        order,        300); }, [order]);
-  useEffect(() => { if (!isGM) return; fbCombatWrite('activeTurnId', activeTurnId, 0);   }, [activeTurnId]);
-  useEffect(() => { if (!isGM) return; fbCombatWrite('turnQueue',    turnQueue,    300); }, [turnQueue]);
-  useEffect(() => { if (!isGM) return; fbCombatWrite('round',        round,        0);   }, [round]);
-  useEffect(() => { if (!isGM) return; fbCombatWrite('log',          log,          300); }, [log]);
-  useEffect(() => { if (!isGM) return; fbCombatWrite('step',         step,         0);   }, [step]);
-  useEffect(() => { if (!isGM) return; fbCombatWrite('combatElapsed', combatElapsed, 500); }, [combatElapsed]);
+  }, [combatants, isGM]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('order',        order,        300); }, [order,        isGM]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('activeTurnId', activeTurnId, 0);   }, [activeTurnId, isGM]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('turnQueue',    turnQueue,    300); }, [turnQueue,    isGM]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('round',        round,        0);   }, [round,        isGM]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('log',          log,          300); }, [log,          isGM]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('step',         step,         0);   }, [step,         isGM]);
+  useEffect(() => { if (!isGM) return; fbCombatWrite('combatElapsed', combatElapsed, 500); }, [combatElapsed, isGM]);
   // ─────────────────────────────────────────────────────────────────────────
 
   // Single interval: runs only during combat on the GM browser.
@@ -3114,7 +3117,7 @@ function App() {
       }
     }, 50);
     return ()=>clearInterval(timerRef.current);
-  },[phase]);
+  },[phase, isGM]);
 
   // When a delayed spell caster's turn activates, show spell resolve UI
   useEffect(()=>{
