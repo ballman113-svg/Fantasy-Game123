@@ -1,0 +1,12 @@
+{
+  "name": "Item Database",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "action": {
+    "title": "Item Database",
+    "icon": "https://ballman113-svg.github.io/Fantasy-Game123/icon-items.svg",
+    "popover": "https://ballman113-svg.github.io/Fantasy-Game123/item-database.html",
+    "height": 800,
+    "width": 1100
+  }
+}

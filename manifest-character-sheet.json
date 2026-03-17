@@ -1,0 +1,12 @@
+{
+  "name": "Character Sheets",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "action": {
+    "title": "Character Sheets",
+    "icon": "https://ballman113-svg.github.io/Fantasy-Game123/icon-sheet.svg",
+    "popover": "https://ballman113-svg.github.io/Fantasy-Game123/character-sheet.html",
+    "height": 800,
+    "width": 900
+  }
+}
