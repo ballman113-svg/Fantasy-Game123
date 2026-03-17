@@ -1,16 +1,12 @@
 {
   "name": "Check Roller",
-  "id": "com.aldra.checkroller",
   "version": "1.0.0",
-  "description": "AldraRPG skill check roller",
-  "author": "ballman113-svg",
+  "manifest_version": 1,
   "action": {
     "title": "Check Roller",
-    "icon": "https://ballman113-svg.github.io/Fantasy-Game123/check_roller.html",
-    "popover": {
-      "url": "https://ballman113-svg.github.io/Fantasy-Game123/check_roller.html",
-      "height": 560,
-      "width": 360
-    }
+    "icon": "https://ballman113-svg.github.io/Fantasy-Game123/icon.svg",
+    "popover": "https://ballman113-svg.github.io/Fantasy-Game123/check_roller.html",
+    "height": 560,
+    "width": 360
   }
 }
