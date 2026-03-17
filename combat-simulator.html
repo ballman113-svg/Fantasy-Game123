@@ -2890,10 +2890,10 @@ function App() {
   useEffect(() => {
     if (!window._fbDb) return;
     const refs = [];
-    const listen = (key, apply, allowNull=false) => {
+    const listen = (key, apply, allowNull=false, force=false) => {
       const ref = window._fbDb.ref('/combat/' + key);
       ref.on('value', snap => {
-        if (_fbCombatPending.current[key]) return; // skip our own echo
+        if (!force && _fbCombatPending.current[key]) return; // skip our own echo
         const raw = snap.val();
         if (raw == null && !allowNull) return;
         apply(raw == null ? null : fbRestore(raw));
@@ -2901,7 +2901,7 @@ function App() {
       refs.push(ref);
     };
     listen('phase',        d => { if (d != null) setPhase(d); });
-    listen('combatants',   d => { if (d != null) { setCombatants(d); combatantsRef.current = d; } });
+    listen('combatants',   d => { if (d != null) { const restored = fbRestore(d); setCombatants(restored); combatantsRef.current = restored; } }, false, true);
     listen('order',        d => { if (d != null) setOrder(d); });
     listen('activeTurnId', d => { setActiveTurnId_(d); }, true);
     listen('turnQueue',    d => { if (d != null) setTurnQueue_(d); });
